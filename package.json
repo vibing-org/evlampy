@@ -3,8 +3,9 @@
   "displayName": "Evlampy",
   "description": "Ultra frugal LLM shell for VS Code. No agentic loop. One request, one response. Diffs apply automatically.",
   "version": "0.0.1",
-  "publisher": "evlampy",
+  "publisher": "vibing-org",
   "license": "MIT",
+  "repository": "https://github.com/vibing-org/evlampy",
   "engines": {
     "vscode": "^1.85.0"
   },
