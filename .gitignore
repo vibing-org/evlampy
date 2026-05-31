@@ -1,0 +1,9 @@
+node_modules/
+dist/
+media/main.js
+media/main.js.map
+*.vsix
+.DS_Store
+
+# Local config can contain a real API key — keep it out of git.
+.evlampy/

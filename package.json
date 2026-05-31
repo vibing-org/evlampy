@@ -1,0 +1,156 @@
+{
+  "name": "evlampy",
+  "displayName": "Evlampy",
+  "description": "Ultra frugal LLM shell for VS Code. No agentic loop. One request, one response. Diffs apply automatically.",
+  "version": "0.0.1",
+  "publisher": "evlampy",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "evlampy",
+          "title": "Evlampy",
+          "icon": "media/nicon.svg"
+        }
+      ]
+    },
+    "views": {
+      "evlampy": [
+        {
+          "id": "evlampy.chatView",
+          "name": "Chat",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "evlampy.addToChat",
+        "title": "Evlampy: Add File/Selection to Chat"
+      },
+      {
+        "command": "evlampy.focusChat",
+        "title": "Evlampy: Focus Chat"
+      },
+      {
+        "command": "evlampy.acceptFile",
+        "title": "Evlampy: Accept This File",
+        "icon": "$(check)"
+      },
+      {
+        "command": "evlampy.rejectFile",
+        "title": "Evlampy: Reject This File",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "evlampy.acceptAll",
+        "title": "Evlampy: Accept All Files",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "evlampy.rejectAll",
+        "title": "Evlampy: Reject All Files",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "evlampy.newChat",
+        "title": "Evlampy: New Chat",
+        "icon": "$(add)"
+      },
+      {
+        "command": "evlampy.chatHistory",
+        "title": "Evlampy: Chat History",
+        "icon": "$(history)"
+      },
+      {
+        "command": "evlampy.openConfig",
+        "title": "Evlampy: Open Config"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "evlampy.newChat",
+          "when": "view == evlampy.chatView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "evlampy.chatHistory",
+          "when": "view == evlampy.chatView",
+          "group": "navigation@2"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "evlampy.acceptFile",
+          "when": "evlampy.reviewDiffActive",
+          "group": "navigation@1"
+        },
+        {
+          "command": "evlampy.rejectFile",
+          "when": "evlampy.reviewDiffActive",
+          "group": "navigation@2"
+        },
+        {
+          "command": "evlampy.acceptAll",
+          "when": "evlampy.reviewDiffActive",
+          "group": "navigation@3"
+        },
+        {
+          "command": "evlampy.rejectAll",
+          "when": "evlampy.reviewDiffActive",
+          "group": "navigation@4"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "evlampy.addToChat",
+        "key": "ctrl+i",
+        "mac": "cmd+i",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "Evlampy",
+      "properties": {
+        "evlampy.configPath": {
+          "type": "string",
+          "default": ".evlampy/config.json",
+          "description": "Path (relative to the workspace root, or absolute) to the Evlampy JSON config file."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit",
+    "test:core": "esbuild test/core.test.ts --bundle --platform=node --outfile=dist/core.test.js && node dist/core.test.js",
+    "package": "node esbuild.js --production",
+    "vscode:prepublish": "node esbuild.js --production"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "marked": "^12.0.2",
+    "openai": "^4.77.0"
+  },
+  "devDependencies": {
+    "@types/highlight.js": "^9.12.4",
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5"
+  }
+}
