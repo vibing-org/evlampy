@@ -42,7 +42,7 @@ On the first launch of Evlampy, an `.evlampy/config.json` file will be automatic
 {
   "userSystemPromptPath": "AGENTS.md",
   "baseURL": "https://openrouter.ai/api/v1",
-  "apiKey": "${env:OPENROUTER_API_KEY}",
+  "apiKey": "${env:EVLAMPY_API_KEY}",
   "models": [
     "openai/gpt-5.5",
     "anthropic/claude-opus-4.8",

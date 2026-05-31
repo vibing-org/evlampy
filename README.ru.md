@@ -42,7 +42,7 @@ Evlampy принципиально лишен agentic loop, он **ван-шот
 {
   "userSystemPromptPath": "AGENTS.md",
   "baseURL": "https://openrouter.ai/api/v1",
-  "apiKey": "${env:OPENROUTER_API_KEY}",
+  "apiKey": "${env:EVLAMPY_API_KEY}",
   "models": [
     "openai/gpt-5.5",
     "anthropic/claude-opus-4.8",
