@@ -1,7 +1,7 @@
 {
   "name": "evlampy",
   "displayName": "Evlampy",
-  "description": "Ultra frugal LLM shell for VS Code. No agentic loop. One request, one response.",
+  "description": "Ultra-frugal LLM shell for VS Code. No agentic loop. One request, one response.",
   "version": "0.0.1",
   "publisher": "vibing-org",
   "license": "MIT",
