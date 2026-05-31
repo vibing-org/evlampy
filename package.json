@@ -5,6 +5,7 @@
   "version": "0.0.1",
   "publisher": "vibing-org",
   "license": "MIT",
+  "icon": "media/nicon.png",
   "repository": "https://github.com/vibing-org/evlampy",
   "engines": {
     "vscode": "^1.85.0"
@@ -76,7 +77,11 @@
       },
       {
         "command": "evlampy.openConfig",
-        "title": "Evlampy: Open Config"
+        "title": "Evlampy: Open Global Config"
+      },
+      {
+        "command": "evlampy.overrideConfig",
+        "title": "Evlampy: Override config for project"
       }
     ],
     "menus": {
@@ -126,10 +131,48 @@
     "configuration": {
       "title": "Evlampy",
       "properties": {
+        "evlampy.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API Key for OpenRouter (or other provider). Supports ${env:VAR}."
+        },
+        "evlampy.baseURL": {
+          "type": "string",
+          "default": "https://openrouter.ai/api/v1",
+          "description": "Base URL for the OpenAI-compatible API."
+        },
+        "evlampy.models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "openai/gpt-5.5",
+            "anthropic/claude-opus-4.8",
+            "google/gemini-3.1-pro-preview",
+            "qwen/qwen3.7-max"
+          ],
+          "description": "List of models available in the chat."
+        },
+        "evlampy.defaultModel": {
+          "type": "string",
+          "default": "openai/gpt-5.5",
+          "description": "Default model to select."
+        },
+        "evlampy.serviceTier": {
+          "type": "string",
+          "default": "flex",
+          "description": "Service tier (e.g., 'flex' for OpenRouter)."
+        },
+        "evlampy.userSystemPromptPath": {
+          "type": "string",
+          "default": "AGENTS.md",
+          "description": "Path to the user system prompt file. Leave empty if you don't need this."
+        },
         "evlampy.configPath": {
           "type": "string",
           "default": ".evlampy/config.json",
-          "description": "Path (relative to the workspace root, or absolute) to the Evlampy JSON config file."
+          "description": "Path (relative to the project root, or absolute) to the Evlampy JSON config file."
         }
       }
     }

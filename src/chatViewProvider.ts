@@ -120,7 +120,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "attachPaths":
         return this.attachPaths(m.paths);
       case "openConfig":
-        return void vscode.commands.executeCommand("evlampy.openConfig");
+        return void vscode.commands.executeCommand("workbench.action.openSettings", "evlampy");
       case "removeAttachment":
         if (m.index >= 0 && m.index < this.pendingAttachments.length) {
           this.pendingAttachments.splice(m.index, 1);
@@ -162,6 +162,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           ? e.message
           : `Failed to load config: ${(e as Error).message}`;
       this.post({ type: "error", message: msg });
+      this.post({ type: "assistantDone" });
+      return;
+    }
+
+    if (!cfg.apiKey) {
+      this.post({ 
+        type: "error", 
+        message: "API key is missing. Please set 'evlampy.apiKey' in VS Code Settings or in your local config." 
+      });
       this.post({ type: "assistantDone" });
       return;
     }
@@ -520,10 +529,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.configWatcher?.dispose();
     this.configWatcher = undefined;
 
-    let file: string;
-    try {
-      file = configFilePath();
-    } catch {
+    const file = configFilePath();
+    if (!file) {
       return;
     }
 
@@ -558,7 +565,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private isConfigFile(uri: vscode.Uri): boolean {
     try {
-      return path.normalize(uri.fsPath) === path.normalize(configFilePath());
+      const file = configFilePath();
+      if (!file) return false;
+      return path.normalize(uri.fsPath) === path.normalize(file);
     } catch {
       return false;
     }

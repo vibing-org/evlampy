@@ -2,8 +2,6 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { EvlampyConfig } from "./types";
 
-const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
-
 export class ConfigError extends Error { }
 
 /** Resolve ${env:VAR} references inside a string. */
@@ -18,7 +16,7 @@ function workspaceRoot(): string | undefined {
 }
 
 /** Absolute path to the config file, honoring the evlampy.configPath setting. */
-export function configFilePath(): string {
+export function configFilePath(): string | undefined {
   const setting =
     vscode.workspace.getConfiguration("evlampy").get<string>("configPath") ||
     ".evlampy/config.json";
@@ -27,49 +25,50 @@ export function configFilePath(): string {
   }
   const root = workspaceRoot();
   if (!root) {
-    throw new ConfigError("No workspace folder is open.");
+    return undefined;
   }
   return path.join(root, setting);
 }
 
 /** Read + validate the config. Throws ConfigError with a friendly message. */
 export async function loadConfig(): Promise<EvlampyConfig> {
+  const vsConfig = vscode.workspace.getConfiguration("evlampy");
+  
+  let config: Partial<EvlampyConfig> = {
+    userSystemPromptPath: vsConfig.get<string>("userSystemPromptPath"),
+    baseURL: vsConfig.get<string>("baseURL"),
+    apiKey: vsConfig.get<string>("apiKey"),
+    models: vsConfig.get<string[]>("models"),
+    defaultModel: vsConfig.get<string>("defaultModel"),
+    serviceTier: vsConfig.get<string>("serviceTier"),
+  };
+
   const file = configFilePath();
-  const uri = vscode.Uri.file(file);
-
-  try {
-    await vscode.workspace.fs.stat(uri);
-  } catch {
-    // Creating a config file if it doesn't exist
-    await ensureConfigScaffold(false);
+  if (file) {
+    const uri = vscode.Uri.file(file);
+    try {
+      const stat = await vscode.workspace.fs.stat(uri);
+      if (stat.type === vscode.FileType.File) {
+        const bytes = await vscode.workspace.fs.readFile(uri);
+        const raw = Buffer.from(bytes).toString("utf8");
+        const parsed = JSON.parse(raw);
+        config = { ...config, ...parsed };
+      }
+    } catch {
+      // Ignore if local config doesn't exist or is invalid
+    }
   }
 
-  const bytes = await vscode.workspace.fs.readFile(uri);
-  const raw = Buffer.from(bytes).toString("utf8");
-
-  let parsed: Partial<EvlampyConfig>;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (e) {
-    throw new ConfigError(`Config is not valid JSON: ${(e as Error).message}`);
-  }
-
-  const apiKey = interpolateEnv(parsed.apiKey ?? "").trim();
-  if (!apiKey) {
-    throw new ConfigError('Config is missing "apiKey" (or the referenced env var is empty).');
-  }
-  const models = parsed.models ?? [];
-  if (!Array.isArray(models) || models.length === 0) {
-    throw new ConfigError('Config must list at least one model in "models".');
-  }
+  const apiKey = interpolateEnv(config.apiKey ?? "").trim();
+  const models = config.models ?? [];
 
   return {
-    userSystemPromptPath: parsed.userSystemPromptPath,
-    baseURL: parsed.baseURL?.trim() || DEFAULT_BASE_URL,
+    userSystemPromptPath: config.userSystemPromptPath,
+    baseURL: config.baseURL?.trim() ?? "",
     apiKey,
     models,
-    defaultModel: parsed.defaultModel || models[0],
-    serviceTier: parsed.serviceTier,
+    defaultModel: config.defaultModel || models[0] || "",
+    serviceTier: config.serviceTier,
   };
 }
 
@@ -92,29 +91,31 @@ export async function loadUserSystemPrompt(cfg: EvlampyConfig): Promise<string> 
 }
 
 const SAMPLE_CONFIG = `{
-  "userSystemPromptPath": "AGENTS.md",
-  "baseURL": "https://openrouter.ai/api/v1",
-  "apiKey": "\${env:EVLAMPY_API_KEY}",
-  "models": ["qwen/qwen3-coder-flash"],
-  "defaultModel": "qwen/qwen3-coder-flash",
-  "serviceTier": "flex"
+  // This file overrides VS Code global settings for Evlampy.
+  // You can define project-specific settings here.
+  "userSystemPromptPath": "AGENTS.md"
+  // "baseURL": "https://openrouter.ai/api/v1",
+  // "apiKey": "\${env:EVLAMPY_API_KEY}",
+  // "models": ["openai/gpt-5.5"],
+  // "defaultModel": "openai/gpt-5.5",
+  // "serviceTier": "flex"
 }
 `;
 
-/** Create a starter config if it doest't exist. Open the config if needed. */
-export async function ensureConfigScaffold(openConfig = true): Promise<void> {
+/** Create a starter config if it doesn't exist. Open the config. */
+export async function overrideConfigForProject(): Promise<void> {
   const file = configFilePath();
+  if (!file) {
+    throw new ConfigError("No workspace folder is open.");
+  }
   const uri = vscode.Uri.file(file);
   try {
     await vscode.workspace.fs.stat(uri);
   } catch {
-    // Create .evlampy directory, if there is none
     const dir = path.dirname(file);
     await vscode.workspace.fs.createDirectory(vscode.Uri.file(dir));
     await vscode.workspace.fs.writeFile(uri, Buffer.from(SAMPLE_CONFIG, "utf8"));
   }
-  if (openConfig) {
-    const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.window.showTextDocument(doc);
-  }
+  const doc = await vscode.workspace.openTextDocument(uri);
+  await vscode.window.showTextDocument(doc);
 }

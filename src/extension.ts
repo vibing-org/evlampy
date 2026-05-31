@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { ChatViewProvider } from "./chatViewProvider";
 import { DiffManager } from "./applier";
-import { ensureConfigScaffold } from "./config";
+import { overrideConfigForProject } from "./config";
 import { Attachment } from "./types";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -44,9 +44,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("evlampy.chatHistory", () =>
       provider.showHistory()
     ),
-    vscode.commands.registerCommand("evlampy.openConfig", async () => {
+    vscode.commands.registerCommand("evlampy.openConfig", () => {
+      vscode.commands.executeCommand("workbench.action.openSettings", "evlampy");
+    }),
+    vscode.commands.registerCommand("evlampy.overrideConfig", async () => {
       try {
-        await ensureConfigScaffold();
+        await overrideConfigForProject();
       } catch (e) {
         vscode.window.showErrorMessage((e as Error).message);
       }
