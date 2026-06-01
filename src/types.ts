@@ -41,18 +41,11 @@ export interface ChatMsg {
   content: string;
 }
 
-/** One turn of a conversation (extension-side source of truth). */
-export interface ConvTurn {
-  role: "user" | "assistant";
-  /** User: the typed prompt and rendered attachments. Assistant: the reply text. */
-  text: string;
-}
-
 /** A saved chat session (history). */
 export interface ChatSession {
   id: string;
   title: string;
-  turns: ConvTurn[];
+  turns: DisplayTurn[];
   totalCost: number;
   totalTokens: number;
   updatedAt: number;

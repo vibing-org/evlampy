@@ -93,8 +93,8 @@ body { display: flex; flex-direction: column; }
 
 .msg.assistant {
   padding: 0 4px 0 18px;
-  border-left: 2px solid color-mix(in srgb, var(--vscode-textLink-foreground, #4daafc) 50%, transparent);
-  border-image: linear-gradient(to bottom, color-mix(in srgb, var(--vscode-textLink-foreground, #4daafc) 50%, transparent), color-mix(in srgb, var(--vscode-editorInfo-foreground, #3794ff) 50%, transparent)) 1;
+  border-left: 3px solid color-mix(in srgb, var(--vscode-textLink-foreground, #4daafc) 65%, transparent);
+  border-radius: 6px;
 }
 
 .msg.system { padding: 0; }
@@ -109,7 +109,7 @@ body { display: flex; flex-direction: column; }
 .msg h1, .msg h2, .msg h3, .msg h4, .msg h5, .msg h6 { margin: 1em 0 0.5em; font-weight: 600; }
 .msg ul, .msg ol { padding-left: 1.5em; }
 .msg li + li { margin-top: 0.25em; }
-.msg blockquote { padding-left: 1em; border-left: 3px solid var(--border); color: var(--muted); }
+.msg blockquote { padding-left: 1em; border-left: 3px solid var(--border); border-radius: 6px; color: var(--muted); }
 .msg hr { border: 0; border-top: 1px solid var(--border); }
 
 .msg pre {
@@ -255,15 +255,15 @@ body { display: flex; flex-direction: column; }
 .suggestion pre { margin: 0; border: none; border-radius: 4px; }
 .suggestion-delete { color: var(--muted); font-style: italic; }
 
-.suggestion.failed { border-color: var(--error); }
-.suggestion.partial { border-color: var(--warning); }
-.suggestion.failed pre { border: 1px solid var(--error); }
-.suggestion.partial pre { border: 1px solid var(--warning); }
+.suggestion.failed { border-color: color-mix(in srgb, var(--error) 65%, transparent); }
+.suggestion.partial { border-color: color-mix(in srgb, var(--warning) 65%, transparent); }
+.suggestion.failed pre { border: 1px solid color-mix(in srgb, var(--error) 65%, transparent); }
+.suggestion.partial pre { border: 1px solid color-mix(in srgb, var(--warning) 65%, transparent); }
 
 .notice { padding: 10px 12px; border-left: 3px solid var(--border); background: var(--vscode-editorWidget-background); border-radius: 6px; }
-.notice.status { border-left-color: var(--vscode-focusBorder, var(--border)); }
-.notice.error { border-left-color: var(--error); }
-.notice.warning { border-left-color: var(--warning); }
+.notice.status { border-left-color: color-mix(in srgb, var(--vscode-focusBorder, var(--border)) 65%, transparent); }
+.notice.error { border-left-color: color-mix(in srgb, var(--error) 65%, transparent); }
+.notice.warning { border-left-color: color-mix(in srgb, var(--warning) 65%, transparent); }
 .notice-title { font-weight: 600; font-size: 0.95em; }
 .notice-text { margin-top: 4px; color: var(--muted); white-space: pre-wrap; font-size: 0.95em; }
 
@@ -272,7 +272,7 @@ body { display: flex; flex-direction: column; }
 .report-detail { margin-top: 4px; color: var(--muted); font-size: 0.9em; }
 .failure-item { margin-top: 8px; }
 .failure-detail { margin-bottom: 6px; color: var(--error); font-size: 0.9em; }
-.failed-suggestion pre { margin: 0; border: 1px solid var(--error); }
+.failed-suggestion pre { margin: 0; border: 1px solid color-mix(in srgb, var(--error) 65%, transparent); }
 
 /* highlight.js theme - Adaptive to VS Code Light/Dark modes */
 .hljs { color: var(--vscode-editor-foreground); background: transparent; }

@@ -652,7 +652,7 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
       break;
     case "loadChat":
       resetChat();
-      transcript = m.turns.map((t) => ({ role: t.role, text: t.text }));
+      transcript = m.turns.map((t) => ({ ...t }));
       transcript.forEach(renderTurn);
       totalCost = m.totalCost;
       totalTokens = m.totalTokens;

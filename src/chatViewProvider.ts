@@ -15,7 +15,7 @@ import {
   Attachment,
   ChatMsg,
   ChatSession,
-  ConvTurn,
+  DisplayTurn,
   EffortLevel,
   FromWebview,
   ToWebview,
@@ -49,7 +49,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private configRefreshTimer?: ReturnType<typeof setTimeout>;
 
   // Current conversation (source of truth for what's sent to the model).
-  private turns: ConvTurn[] = [];
+  private turns: DisplayTurn[] = [];
   private sessionId = newId();
   private totalCost = 0;
   private totalTokens = 0;
@@ -107,13 +107,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.view?.webview.postMessage(msg);
   }
 
+  private async pushError(message: string): Promise<void> {
+    this.post({ type: "error", message });
+    this.turns.push({ role: "error", text: message });
+    await this.saveSession();
+  }
+
+  private async pushStatus(text: string): Promise<void> {
+    this.post({ type: "status", text });
+    this.turns.push({ role: "system", text });
+    await this.saveSession();
+  }
+
   private async onMessage(m: FromWebview): Promise<void> {
     switch (m.type) {
       case "ready":
         if (m.transcript && m.transcript.length > 0 && this.turns.length === 0) {
-          this.turns = m.transcript
-            .filter((t) => t.role === "user" || t.role === "assistant")
-            .map((t) => ({ role: t.role as "user" | "assistant", text: t.text }));
+          this.turns = m.transcript.map((t) => ({ ...t }));
           this.totalCost = m.totalCost ?? 0;
           this.totalTokens = m.totalTokens ?? 0;
         }
@@ -168,16 +178,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         e instanceof ConfigError
           ? e.message
           : `Failed to load config: ${(e as Error).message}`;
-      this.post({ type: "error", message: msg });
+      await this.pushError(msg);
       this.post({ type: "assistantDone" });
       return;
     }
 
     if (!cfg.apiKey) {
-      this.post({ 
-        type: "error", 
-        message: "API key is missing. Please set 'evlampy.apiKey' in VS Code Settings or in your local config." 
-      });
+      await this.pushError("API key is missing. Please set 'evlampy.apiKey' in VS Code Settings or in your local config.");
       this.post({ type: "assistantDone" });
       return;
     }
@@ -196,10 +203,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     const messages: ChatMsg[] = [
       { role: "system", content: system },
-      ...this.turns.map((t) => ({
-        role: t.role,
-        content: t.text,
-      })),
+      ...this.turns
+        .filter((t) => t.role === "user" || t.role === "assistant")
+        .map((t) => ({
+          role: t.role as "user" | "assistant",
+          content: t.text,
+        })),
     ];
 
     this.abort = new AbortController();
@@ -226,10 +235,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     } catch (e) {
       // Roll back the user turn so a failed request doesn't poison the context.
       this.turns.pop();
-      this.post({
-        type: "error",
-        message: `Request failed: ${(e as Error).message}`,
-      });
+      await this.pushError(`Request failed: ${(e as Error).message}`);
       this.post({ type: "assistantDone" });
       return;
     }
@@ -248,13 +254,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const ops = parseDiffOps(full);
       if (ops.length > 0) {
         const report = await this.diffs.apply(ops);
+        this.turns[this.turns.length - 1].report = report;
+        await this.saveSession();
         this.post({ type: "applyReport", report });
       }
     } catch (e) {
-      this.post({
-        type: "error",
-        message: `Post-processing failed: ${(e as Error).message}`,
-      });
+      await this.pushError(`Post-processing failed: ${(e as Error).message}`);
     } finally {
       this.abort = undefined;
       this.post({ type: "assistantDone", usage });
@@ -303,7 +308,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     await vscode.commands.executeCommand("evlampy.chatView.focus");
     this.post({
       type: "loadChat",
-      turns: this.turns.map((t) => ({ role: t.role, text: t.text })),
+      turns: this.turns,
       totalCost: this.totalCost,
       totalTokens: this.totalTokens,
     });
@@ -357,17 +362,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
 
     if (attachedFiles > 1 || uniqueInputs.length > 1) {
-      this.post({
-        type: "status",
-        text: `Attached ${attachedFiles} file(s) from ${uniqueInputs.length} item(s).`,
-      });
+      await this.pushStatus(`Attached ${attachedFiles} file(s) from ${uniqueInputs.length} item(s).`);
     }
 
     if (failed.length > 0) {
-      this.post({
-        type: "error",
-        message: `Some paths could not be attached: ${failed.join(" | ")}`,
-      });
+      await this.pushError(`Some paths could not be attached: ${failed.join(" | ")}`);
     }
   }
 
