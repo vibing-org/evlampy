@@ -83,13 +83,17 @@ const costEl = $("cost");
 const sendBtn = $<HTMLButtonElement>("send");
 
 const INPUT_MAX_HEIGHT_RATIO = 0.25;
+const AUTO_SCROLL_BOTTOM_THRESHOLD = 24;
 
 type AssistantStatus = "waiting" | "streaming" | "done" | "error";
 
 interface AssistantView {
   el: HTMLElement;
+  reasoningHost: HTMLElement;
+  answerHost: HTMLElement;
   raw: string;
   reasoning: string;
+  reasoningOpen: boolean;
   status: AssistantStatus;
   report?: ApplyReport;
 }
@@ -104,8 +108,28 @@ let selectedModel = "";
 let selectedEffort: EffortLevel = "none";
 let transcript: DisplayTurn[] = [];
 let lastAssistantEl: HTMLElement | null = null;
+let followOutput = true;
+let ignoreScrollTracking = false;
+let scrollReleaseFrame: number | undefined;
 
 marked.setOptions({ gfm: true, breaks: true });
+
+messagesEl.addEventListener("scroll", () => {
+  if (ignoreScrollTracking) {
+    return;
+  }
+  followOutput = isNearBottom();
+});
+
+messagesEl.addEventListener(
+  "wheel",
+  (e) => {
+    if (e.deltaY < 0) {
+      followOutput = false;
+    }
+  },
+  { passive: true }
+);
 
 // ---- Persisted webview state (survives reload / hide) ----
 
@@ -200,9 +224,8 @@ function renderTurn(t: DisplayTurn) {
     view.raw = t.text;
     view.status = "done";
     view.report = t.report;
-    renderAssistantState(view, true);
+    refreshAssistantView(view, true);
     if (view.report) {
-      annotateAssistantReport(view.report, view.el);
       renderApplyReport(view.report);
     }
     lastAssistantEl = view.el;
@@ -247,12 +270,20 @@ function createAssistantView(): AssistantView {
   el.className = "msg assistant";
   row.appendChild(el);
 
+  const reasoningHost = document.createElement("div");
+  const answerHost = document.createElement("div");
+  el.appendChild(reasoningHost);
+  el.appendChild(answerHost);
+
   messagesEl.appendChild(row);
 
   const view: AssistantView = {
     el,
+    reasoningHost,
+    answerHost,
     raw: "",
     reasoning: "",
+    reasoningOpen: false,
     status: "waiting",
   };
 
@@ -285,24 +316,90 @@ function renderMessage(
 }
 
 
-function renderAssistantState(view: AssistantView, final: boolean) {
-  view.el.innerHTML = `${renderReasoningBlock(view)}${renderAssistantAnswer(
-    view.raw,
-    final,
-    view.status
-  )}`;
-  applyHighlighting(view.el);
+function refreshAssistantView(view: AssistantView, final: boolean) {
+  renderAssistantState(view, final);
+  if (view.report) {
+    annotateAssistantReport(view.report, view.el);
+  }
 }
 
-function renderReasoningBlock(view: AssistantView): string {
+function renderAssistantState(view: AssistantView, final: boolean) {
+  renderAssistantReasoning(view);
+  setInnerHtmlIfChanged(
+    view.answerHost,
+    renderAssistantAnswer(view.raw, final, view.status)
+  );
+
+  applyHighlighting(view.reasoningHost);
+  applyHighlighting(view.answerHost);
+}
+
+function renderAssistantReasoning(view: AssistantView) {
   const reasoning = view.reasoning.trim();
   if (!reasoning) {
-    return "";
+    if (view.reasoningHost.childElementCount > 0) {
+      view.reasoningHost.replaceChildren();
+    }
+    return;
   }
 
-  return `<details class="assistant-reasoning"><summary>Thinking</summary><div class="assistant-reasoning-body">${renderMarkdownBlock(
-    view.reasoning
-  )}</div></details>`;
+  const { details, body, created } = ensureReasoningElements(view);
+
+  if (created) {
+    details.open = view.reasoningOpen;
+  } else {
+    view.reasoningOpen = details.open;
+  }
+
+  setInnerHtmlIfChanged(body, renderMarkdownBlock(view.reasoning));
+}
+
+function ensureReasoningElements(view: AssistantView): {
+  details: HTMLDetailsElement;
+  body: HTMLElement;
+  created: boolean;
+} {
+  const existingDetails =
+    view.reasoningHost.querySelector<HTMLDetailsElement>(".assistant-reasoning");
+  if (existingDetails) {
+    let existingBody =
+      existingDetails.querySelector<HTMLElement>(".assistant-reasoning-body");
+    if (!existingBody) {
+      existingBody = document.createElement("div");
+      existingBody.className = "assistant-reasoning-body";
+      existingDetails.appendChild(existingBody);
+    }
+    return {
+      details: existingDetails,
+      body: existingBody,
+      created: false,
+    };
+  }
+
+  const details = document.createElement("details");
+  details.className = "assistant-reasoning";
+
+  const summary = document.createElement("summary");
+  summary.textContent = "Thinking";
+
+  const body = document.createElement("div");
+  body.className = "assistant-reasoning-body";
+
+  details.appendChild(summary);
+  details.appendChild(body);
+  details.addEventListener("toggle", () => {
+    view.reasoningOpen = details.open;
+  });
+
+  view.reasoningHost.replaceChildren(details);
+
+  return { details, body, created: true };
+}
+
+function setInnerHtmlIfChanged(el: HTMLElement, html: string) {
+  if (el.innerHTML !== html) {
+    el.innerHTML = html;
+  }
 }
 
 function renderAssistantAnswer(
@@ -322,12 +419,41 @@ function renderAssistantAnswer(
 
 function applyHighlighting(root: HTMLElement) {
   root.querySelectorAll("pre code").forEach((block) => {
-    hljs.highlightElement(block as HTMLElement);
+    const el = block as HTMLElement;
+    if (el.dataset.highlighted === "yes") {
+      return;
+    }
+    hljs.highlightElement(el);
   });
 }
 
-function scrollToBottom() {
+function isNearBottom(): boolean {
+  return (
+    messagesEl.scrollHeight - (messagesEl.scrollTop + messagesEl.clientHeight) <=
+    AUTO_SCROLL_BOTTOM_THRESHOLD
+  );
+}
+
+function scrollToBottom(force = false) {
+  if (!force && !followOutput) {
+    return;
+  }
+
+  ignoreScrollTracking = true;
   messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  if (scrollReleaseFrame !== undefined) {
+    cancelAnimationFrame(scrollReleaseFrame);
+  }
+
+  scrollReleaseFrame = window.requestAnimationFrame(() => {
+    scrollReleaseFrame = undefined;
+    if (force || followOutput) {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+    ignoreScrollTracking = false;
+    followOutput = isNearBottom();
+  });
 }
 
 function updateInputHeight() {
@@ -572,6 +698,7 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
       inputEl.focus();
       break;
     case "userMessage": {
+      followOutput = true;
       const turn: DisplayTurn = { role: "user", text: m.text };
       renderTurn(turn);
       transcript.push(turn);
@@ -579,6 +706,7 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
       break;
     }
     case "assistantStart":
+      followOutput = true;
       streaming = true;
       sendBtn.disabled = true;
       currentAssistant = createAssistantView();
@@ -589,10 +717,7 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
         if (currentAssistant.status === "waiting") {
           currentAssistant.status = "streaming";
         }
-        renderAssistantState(currentAssistant, false);
-        if (currentAssistant.report) {
-          annotateAssistantReport(currentAssistant.report, currentAssistant.el);
-        }
+        refreshAssistantView(currentAssistant, false);
         scrollToBottom();
       }
       break;
@@ -600,10 +725,7 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
       if (currentAssistant) {
         currentAssistant.raw += m.text;
         currentAssistant.status = "streaming";
-        renderAssistantState(currentAssistant, false);
-        if (currentAssistant.report) {
-          annotateAssistantReport(currentAssistant.report, currentAssistant.el);
-        }
+        refreshAssistantView(currentAssistant, false);
         scrollToBottom();
       }
       break;
@@ -614,15 +736,12 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
         if (currentAssistant.status !== "error") {
           currentAssistant.status = "done";
         }
-        renderAssistantState(currentAssistant, true);
-        if (currentAssistant.report) {
-          annotateAssistantReport(currentAssistant.report, currentAssistant.el);
-        }
+        refreshAssistantView(currentAssistant, true);
         if (currentAssistant.raw.trim()) {
-          transcript.push({ 
-            role: "assistant", 
+          transcript.push({
+            role: "assistant",
             text: currentAssistant.raw,
-            report: currentAssistant.report 
+            report: currentAssistant.report
           });
         }
         lastAssistantEl = currentAssistant.el;
@@ -674,10 +793,7 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
       sendBtn.disabled = false;
       if (currentAssistant) {
         currentAssistant.status = "error";
-        renderAssistantState(currentAssistant, true);
-        if (currentAssistant.report) {
-          annotateAssistantReport(currentAssistant.report, currentAssistant.el);
-        }
+        refreshAssistantView(currentAssistant, true);
       }
       saveState();
       break;
@@ -726,6 +842,7 @@ function resetChat() {
   messagesEl.innerHTML = "";
   attachments = [];
   lastAssistantEl = null;
+  followOutput = true;
   renderAttachments();
   transcript = [];
   totalCost = 0;
@@ -810,20 +927,29 @@ function findEvlampyBlockClose(
   from: number,
   kind: "read" | "edit" | "new" | "rewrite" | "delete"
 ): { start: number; end: number } | null {
+  const closeTag = `</evlampy:${kind}>`;
   const closeRegex = new RegExp(
     `(^|\\n)[ \\t]*<\\/evlampy:${kind}>[ \\t]*(?=\\n|$)`,
     "g"
   );
   closeRegex.lastIndex = from;
   const match = closeRegex.exec(text);
-  if (!match) {
+  if (match) {
+    const prefixLen = match[1]?.length ?? 0;
+    return {
+      start: match.index + prefixLen,
+      end: match.index + match[0].length,
+    };
+  }
+
+  const fallbackStart = text.indexOf(closeTag, from);
+  if (fallbackStart < 0) {
     return null;
   }
 
-  const prefixLen = match[1]?.length ?? 0;
   return {
-    start: match.index + prefixLen,
-    end: match.index + match[0].length,
+    start: fallbackStart,
+    end: fallbackStart + closeTag.length,
   };
 }
 
