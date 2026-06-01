@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "publisher": "vibing-org",
   "license": "MIT",
-  "icon": "media/nicon.png",
+  "icon": "media/icon2.png",
   "repository": "https://github.com/vibing-org/evlampy",
   "engines": {
     "vscode": "^1.85.0"
@@ -23,7 +23,7 @@
         {
           "id": "evlampy",
           "title": "Evlampy",
-          "icon": "media/nicon.svg"
+          "icon": "media/icon2.svg"
         }
       ]
     },
