@@ -50,4 +50,4 @@ This creates a local `.evlampy/config.json` file.
 
 ## Demo
 
-![Webp Demo](docs/content/full-demo.webp)
+![Webp Demo](https://raw.githubusercontent.com/vibing-org/evlampy/main/docs/content/full-demo.webp)
