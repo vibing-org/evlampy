@@ -19,6 +19,7 @@ import {
   EffortLevel,
   FromWebview,
   ToWebview,
+  UsageInfo,
 } from "./types";
 
 const HISTORY_KEY = "evlampy.history";
@@ -45,6 +46,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "evlampy.chatView";
   private view?: vscode.WebviewView;
   private abort?: AbortController;
+  private abortReason?: string;
   private configWatcher?: vscode.FileSystemWatcher;
   private configRefreshTimer?: ReturnType<typeof setTimeout>;
 
@@ -146,6 +148,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "clearAttachments":
         this.pendingAttachments = [];
         return;
+      case "cancel":
+        if (this.abort) {
+          this.abortReason = "Cancelled by user";
+          this.abort.abort();
+        }
+        return;
     }
   }
 
@@ -212,10 +220,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     ];
 
     this.abort = new AbortController();
+    this.abortReason = undefined;
     this.post({ type: "assistantStart" });
 
-    let full;
-    let usage;
+    let full = "";
+    let usage: UsageInfo | undefined;
+    let tokenTimer: NodeJS.Timeout | undefined;
+
+    const resetTimer = () => {
+      if (tokenTimer) clearTimeout(tokenTimer);
+      tokenTimer = setTimeout(() => {
+        if (this.abort) {
+          this.abortReason = "LLM response timed out (no tokens received for 60 seconds).";
+          this.abort.abort();
+        }
+      }, 60000);
+    };
+
+    resetTimer();
+
     try {
       const res = await chat({
         config: cfg,
@@ -224,20 +247,42 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         messages,
         signal: this.abort.signal,
         onDelta: (d) => {
+          full += d;
+          resetTimer();
           this.post({ type: "assistantDelta", text: d });
         },
         onReasoningDelta: (d) => {
+          resetTimer();
           this.post({ type: "assistantReasoningDelta", text: d });
         },
       });
       usage = res.usage;
       full = res.text;
     } catch (e) {
-      // Roll back the user turn so a failed request doesn't poison the context.
-      this.turns.pop();
-      await this.pushError(`Request failed: ${(e as Error).message}`);
+      const err = e as Error;
+      const isAbort = err.name === "AbortError" || this.abortReason !== undefined;
+
+      if (isAbort) {
+        if (full.trim()) {
+          this.turns.push({ role: "assistant", text: full });
+          await this.saveSession();
+        }
+        if (this.abortReason === "Cancelled by user") {
+          await this.pushStatus("Generation stopped by user.");
+        } else {
+          await this.pushError(this.abortReason || "Request aborted.");
+        }
+      } else {
+        // Roll back the user turn so a failed request doesn't poison the context.
+        this.turns.pop();
+        await this.pushError(`Request failed: ${err.message}`);
+      }
       this.post({ type: "assistantDone" });
       return;
+    } finally {
+      if (tokenTimer) clearTimeout(tokenTimer);
+      this.abort = undefined;
+      this.abortReason = undefined;
     }
 
     try {

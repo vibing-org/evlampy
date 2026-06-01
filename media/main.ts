@@ -586,8 +586,9 @@ function fmtCost(c?: number): string {
 // ---- Sending ----
 
 function send() {
+  if (streaming) return;
   const text = inputEl.value.trim();
-  if (!text || streaming) return;
+  if (!text) return;
   vscode.postMessage({
     type: "send",
     text,
@@ -601,7 +602,13 @@ function send() {
   renderAttachments();
 }
 
-sendBtn.onclick = send;
+sendBtn.onclick = () => {
+  if (streaming) {
+    vscode.postMessage({ type: "cancel" });
+    return;
+  }
+  send();
+};
 
 inputEl.addEventListener("keydown", (e) => {
   if (suggestionsVisible() && handleSuggestionKey(e)) return;
@@ -768,7 +775,9 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
     case "assistantStart":
       followOutput = true;
       streaming = true;
-      sendBtn.disabled = true;
+      sendBtn.classList.add("streaming");
+      sendBtn.innerHTML = `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1"></rect></svg>`;
+      sendBtn.title = "Stop generation";
       currentAssistant = createAssistantView();
       break;
     case "assistantReasoningDelta":
@@ -791,7 +800,9 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
       break;
     case "assistantDone":
       streaming = false;
-      sendBtn.disabled = false;
+      sendBtn.classList.remove("streaming");
+      sendBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
+      sendBtn.title = "Send (Enter)";
       if (currentAssistant) {
         if (currentAssistant.status !== "error") {
           currentAssistant.status = "done";
@@ -858,7 +869,9 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
       renderTurn(turn);
       transcript.push(turn);
       streaming = false;
-      sendBtn.disabled = false;
+      sendBtn.classList.remove("streaming");
+      sendBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
+      sendBtn.title = "Send (Enter)";
       if (currentAssistant) {
         currentAssistant.status = "error";
         refreshAssistantView(currentAssistant, true);
@@ -917,7 +930,9 @@ function resetChat() {
   totalTokens = 0;
   currentAssistant = null;
   streaming = false;
-  sendBtn.disabled = false;
+  sendBtn.classList.remove("streaming");
+  sendBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`;
+  sendBtn.title = "Send (Enter)";
   hideSuggestions();
   renderCost();
   saveState();

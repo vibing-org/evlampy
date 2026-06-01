@@ -241,6 +241,19 @@ body { display: flex; flex-direction: column; }
 #send:active { transform: scale(0.95); }
 #send:disabled { background: transparent; color: var(--muted); cursor: default; transform: none; }
 
+#send.streaming {
+  background: transparent;
+  color: var(--error);
+  border: 1px solid var(--error);
+}
+#send.streaming:hover {
+  background: var(--error);
+  color: var(--vscode-editor-background);
+}
+#send.streaming svg {
+  transform: none;
+}
+
 .assistant-placeholder { color: var(--muted); font-style: italic; }
 .assistant-placeholder.error { color: var(--error); font-style: normal; }
 

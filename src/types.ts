@@ -112,7 +112,8 @@ export type FromWebview =
   | { type: "attachPaths"; paths: string[] }
   | { type: "openConfig" }
   | { type: "removeAttachment"; index: number }
-  | { type: "clearAttachments" };
+  | { type: "clearAttachments" }
+  | { type: "cancel" };
 
 export interface ApplyFailure {
   hunkIndex?: number;
