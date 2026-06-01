@@ -1,8 +1,8 @@
 # Evlampy
 
 <p align="right">
-  <a href="https://github.com/vibing-org/evlampy/blob/main/README.md">English</a>
-  <strong>Русский</strong> |
+  <a href="https://github.com/vibing-org/evlampy/blob/main/README.md">English</a> |
+  <strong>Русский</strong>
 </p>
 
 Evlampy — это расширение для VS Code, представляющее собой максимально простую и экономную оболочку для работы с LLM. 
