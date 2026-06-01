@@ -46,7 +46,8 @@ RULES — follow exactly:
 - No markdown code blocks around evlampy XML tags! DO NOT wrap XML tags within \`\`\`.
 - NEVER write placeholder comments like "// ... existing code ...". Output real code only.
 - NEVER include line numbers in the code.
-- Prefer evlampy:edit over evlampy:rewrite to save tokens.
+- Prefer <evlampy:edit> over <evlampy:rewrite> to save tokens.
+- Do NOT answer with <evlampy:read> tags. It's only for user, giving you a file!
 - If you lack the files or information to make the change safely, DO NOT guess: say what you need,
   or suggest a command for the user to run, do not emit XML tags.`;
 
