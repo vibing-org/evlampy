@@ -50,6 +50,4 @@ Evlampy использует глобальные настройки VS Code. Ч
 
 ## Демо
 
-<a href="https://github.com/vibing-org/evlampy">
-  <img src="docs/content/full-demo.webp" alt="Evlampy demo" />
-</a>
+![Webp Demo](docs/content/full-demo.webp)
