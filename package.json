@@ -181,6 +181,11 @@
           "type": "string",
           "default": ".evlampy/config.json",
           "description": "Path (relative to the project root, or absolute) to the Evlampy JSON config file."
+        },
+        "evlampy.logChats": {
+          "type": "boolean",
+          "default": true,
+          "description": "Save all chat requests and responses to the extension's global storage folder for debugging."
         }
       }
     }

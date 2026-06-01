@@ -249,6 +249,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
       }
       await this.saveSession();
+      await this.logChat(messages, full);
 
       // Parse + apply diffs from the completed message.
       const ops = parseDiffOps(full);
@@ -316,6 +317,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private loadHistory(): ChatSession[] {
     return this.context.workspaceState.get<ChatSession[]>(HISTORY_KEY, []);
+  }
+
+  private async logChat(messages: ChatMsg[], responseText: string): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration("evlampy");
+    if (!cfg.get<boolean>("logChats", true)) return;
+
+    try {
+      const logDir = vscode.Uri.joinPath(this.context.globalStorageUri, "logs");
+      await vscode.workspace.fs.createDirectory(logDir);
+      
+      const logFile = vscode.Uri.joinPath(logDir, `${this.sessionId}.json`);
+      
+      let existing: any[] = [];
+      try {
+        const bytes = await vscode.workspace.fs.readFile(logFile);
+        existing = JSON.parse(Buffer.from(bytes).toString("utf8"));
+      } catch {}
+      
+      existing.push({
+        timestamp: new Date().toISOString(),
+        request: messages,
+        response: responseText
+      });
+      
+      await vscode.workspace.fs.writeFile(logFile, Buffer.from(JSON.stringify(existing, null, 2), "utf8"));
+    } catch (e) {
+      console.error("Evlampy: Failed to log chat", e);
+    }
   }
 
   /** Upsert the current session into history (most-recent first, capped). */
