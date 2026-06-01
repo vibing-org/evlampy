@@ -110,6 +110,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async onMessage(m: FromWebview): Promise<void> {
     switch (m.type) {
       case "ready":
+        if (m.transcript && m.transcript.length > 0 && this.turns.length === 0) {
+          this.turns = m.transcript
+            .filter((t) => t.role === "user" || t.role === "assistant")
+            .map((t) => ({ role: t.role as "user" | "assistant", text: t.text }));
+          this.totalCost = m.totalCost ?? 0;
+          this.totalTokens = m.totalTokens ?? 0;
+        }
         return this.sendInit();
       case "send":
         return this.runChat(m.text, m.attachments, m.model, m.effort);

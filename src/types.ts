@@ -60,8 +60,9 @@ export interface ChatSession {
 
 /** A turn as shown in the panel (no file bodies). */
 export interface DisplayTurn {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system" | "error";
   text: string;
+  report?: ApplyReport;
 }
 
 /** A single search/replace hunk inside an `evlampy:edit` block. */
@@ -105,7 +106,7 @@ export type ToWebview =
   | { type: "error"; message: string };
 
 export type FromWebview =
-  | { type: "ready" }
+  | { type: "ready"; transcript?: DisplayTurn[]; totalCost?: number; totalTokens?: number }
   | {
       type: "send";
       text: string;

@@ -81,7 +81,7 @@ export function findMatch(fileText: string, search: string): MatchOutcome {
 
   return {
     ok: false,
-    reason: `Confidence is too low (${(bestScore * 100).toFixed(0)}%). Search block did not match.`
+    reason: `Evlampy isn't sure where to apply this diff. Confidence is too low (${(bestScore * 100).toFixed(0)}%).`
   };
 }
 

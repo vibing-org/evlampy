@@ -36,8 +36,9 @@ interface ApplyReport {
 }
 
 interface DisplayTurn {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system" | "error";
   text: string;
+  report?: ApplyReport;
 }
 
 type ToWebview =
@@ -141,7 +142,7 @@ function restoreState() {
   totalTokens = s.totalTokens ?? 0;
   populateModels();
   populateEfforts();
-  transcript.forEach((t) => addMessage(t.role, t.text));
+  transcript.forEach(renderTurn);
   renderCost();
 }
 
@@ -190,6 +191,27 @@ effortEl.addEventListener("change", () => {
 });
 
 // ---- Rendering ----
+
+function renderTurn(t: DisplayTurn) {
+  if (t.role === "user") {
+    addMessage("user", t.text);
+  } else if (t.role === "assistant") {
+    const view = createAssistantView();
+    view.raw = t.text;
+    view.status = "done";
+    view.report = t.report;
+    renderAssistantState(view, true);
+    if (view.report) {
+      annotateAssistantReport(view.report, view.el);
+      renderApplyReport(view.report);
+    }
+    lastAssistantEl = view.el;
+  } else if (t.role === "system") {
+    addNotice("status", "Info", t.text);
+  } else if (t.role === "error") {
+    addNotice("error", "Error", t.text);
+  }
+}
 
 function addMessage(role: "user" | "assistant" | "system", text: string): HTMLElement {
   const row = document.createElement("div");
@@ -549,11 +571,13 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
       }
       inputEl.focus();
       break;
-    case "userMessage":
-      addMessage("user", m.text);
-      transcript.push({ role: "user", text: m.text });
+    case "userMessage": {
+      const turn: DisplayTurn = { role: "user", text: m.text };
+      renderTurn(turn);
+      transcript.push(turn);
       saveState();
       break;
+    }
     case "assistantStart":
       streaming = true;
       sendBtn.disabled = true;
@@ -595,7 +619,11 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
           annotateAssistantReport(currentAssistant.report, currentAssistant.el);
         }
         if (currentAssistant.raw.trim()) {
-          transcript.push({ role: "assistant", text: currentAssistant.raw });
+          transcript.push({ 
+            role: "assistant", 
+            text: currentAssistant.raw,
+            report: currentAssistant.report 
+          });
         }
         lastAssistantEl = currentAssistant.el;
       }
@@ -625,17 +653,23 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
     case "loadChat":
       resetChat();
       transcript = m.turns.map((t) => ({ role: t.role, text: t.text }));
-      transcript.forEach((t) => addMessage(t.role, t.text));
+      transcript.forEach(renderTurn);
       totalCost = m.totalCost;
       totalTokens = m.totalTokens;
       renderCost();
       saveState();
       break;
-    case "status":
-      addNotice("status", "Info", m.text);
+    case "status": {
+      const turn: DisplayTurn = { role: "system", text: m.text };
+      renderTurn(turn);
+      transcript.push(turn);
+      saveState();
       break;
-    case "error":
-      addNotice("error", "Error", m.message);
+    }
+    case "error": {
+      const turn: DisplayTurn = { role: "error", text: m.message };
+      renderTurn(turn);
+      transcript.push(turn);
       streaming = false;
       sendBtn.disabled = false;
       if (currentAssistant) {
@@ -645,7 +679,9 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
           annotateAssistantReport(currentAssistant.report, currentAssistant.el);
         }
       }
+      saveState();
       break;
+    }
   }
 });
 
@@ -995,4 +1031,4 @@ function escapeHtml(s: string): string {
 populateEfforts();
 restoreState();
 updateInputHeight();
-vscode.postMessage({ type: "ready" });
+vscode.postMessage({ type: "ready", transcript, totalCost, totalTokens });
