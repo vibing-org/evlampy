@@ -101,7 +101,7 @@ let totalCost = 0;
 let totalTokens = 0;
 let availableModels: string[] = [];
 let selectedModel = "";
-let selectedEffort: EffortLevel = "high";
+let selectedEffort: EffortLevel = "none";
 let transcript: DisplayTurn[] = [];
 let lastAssistantEl: HTMLElement | null = null;
 
@@ -136,7 +136,7 @@ function restoreState() {
   }
   availableModels = s.availableModels ?? [];
   selectedModel = s.selectedModel ?? "";
-  selectedEffort = s.selectedEffort ?? "high";
+  selectedEffort = s.selectedEffort ?? "none";
   transcript = s.transcript ?? [];
   totalCost = s.totalCost ?? 0;
   totalTokens = s.totalTokens ?? 0;

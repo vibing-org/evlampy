@@ -2,13 +2,19 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { ChatViewProvider } from "./chatViewProvider";
 import { DiffManager } from "./applier";
-import { overrideConfigForProject } from "./config";
+import { overrideConfigForProject, loadConfig } from "./config";
 import { Attachment } from "./types";
 
 export function activate(context: vscode.ExtensionContext): void {
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
   const diffs = new DiffManager(root);
   context.subscriptions.push(diffs.register());
+
+  loadConfig().then(cfg => {
+    if (!cfg.apiKey) {
+      vscode.commands.executeCommand("workbench.action.openSettings", "evlampy");
+    }
+  }).catch(() => {});
 
   const provider = new ChatViewProvider(context, diffs);
   context.subscriptions.push(

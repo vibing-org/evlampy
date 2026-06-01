@@ -184,7 +184,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
 
     if (!cfg.apiKey) {
-      await this.pushError("API key is missing. Please set 'evlampy.apiKey' in VS Code Settings or in your local config.");
+      await this.pushError("API key is missing. Please run 'Evlampy: Open Global Config' and set the API key there.");
       this.post({ type: "assistantDone" });
       return;
     }
