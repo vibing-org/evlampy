@@ -39,6 +39,7 @@ interface DisplayTurn {
   role: "user" | "assistant" | "system" | "error";
   text: string;
   report?: ApplyReport;
+  usage?: UsageInfo;
 }
 
 type ToWebview =
@@ -91,6 +92,7 @@ interface AssistantView {
   el: HTMLElement;
   reasoningHost: HTMLElement;
   answerHost: HTMLElement;
+  usageHost: HTMLElement;
   raw: string;
   reasoning: string;
   reasoningOpen: boolean;
@@ -170,6 +172,12 @@ function restoreState() {
   renderCost();
 }
 
+function updateModelDisplay() {
+  Array.from(modelEl.options).forEach(o => {
+    o.textContent = o.selected ? (o.value.split("/").pop() || o.value) : o.value;
+  });
+}
+
 function populateModels() {
   modelEl.innerHTML = "";
   availableModels.forEach((mod) => {
@@ -190,6 +198,7 @@ function populateModels() {
     selectedModel = availableModels[0];
   }
   modelEl.value = selectedModel;
+  updateModelDisplay();
 }
 
 function populateEfforts() {
@@ -198,14 +207,22 @@ function populateEfforts() {
   efforts.forEach((effort) => {
     const o = document.createElement("option");
     o.value = effort;
-    o.textContent = `effort: ${effort}`;
+    o.textContent = effort;
     effortEl.appendChild(o);
   });
   effortEl.value = selectedEffort;
+  effortEl.title = "Effort";
 }
+
+modelEl.addEventListener("mousedown", () => {
+  Array.from(modelEl.options).forEach(o => o.textContent = o.value);
+});
+
+modelEl.addEventListener("blur", updateModelDisplay);
 
 modelEl.addEventListener("change", () => {
   selectedModel = modelEl.value;
+  updateModelDisplay();
   saveState();
 });
 
@@ -224,6 +241,9 @@ function renderTurn(t: DisplayTurn) {
     view.raw = t.text;
     view.status = "done";
     view.report = t.report;
+    if (t.usage) {
+      view.usageHost.textContent = formatUsage(t.usage);
+    }
     refreshAssistantView(view, true);
     if (view.report) {
       renderApplyReport(view.report);
@@ -243,7 +263,10 @@ function addMessage(role: "user" | "assistant" | "system", text: string): HTMLEl
   if (role !== "system") {
     const header = document.createElement("div");
     header.className = "msg-header";
-    header.textContent = role === "user" ? "You" : "Evlampy";
+    const title = document.createElement("div");
+    title.className = "msg-header-title";
+    title.textContent = role === "user" ? "You" : "Evlampy";
+    header.appendChild(title);
     row.appendChild(header);
   }
 
@@ -263,7 +286,13 @@ function createAssistantView(): AssistantView {
 
   const header = document.createElement("div");
   header.className = "msg-header";
-  header.textContent = "Evlampy";
+  const title = document.createElement("div");
+  title.className = "msg-header-title";
+  title.textContent = "Evlampy";
+  const usageHost = document.createElement("div");
+  usageHost.className = "msg-usage";
+  header.appendChild(title);
+  header.appendChild(usageHost);
   row.appendChild(header);
 
   const el = document.createElement("div");
@@ -281,6 +310,7 @@ function createAssistantView(): AssistantView {
     el,
     reasoningHost,
     answerHost,
+    usageHost,
     raw: "",
     reasoning: "",
     reasoningOpen: false,
@@ -510,12 +540,42 @@ function renderAttachments() {
   }
 }
 
-function renderCost(lastUsage?: UsageInfo) {
-  const last = lastUsage
-    ? `last: ${fmtCost(lastUsage.cost)} · ${lastUsage.totalTokens} tok`
-    : "";
-  const total = `total: ${fmtCost(totalCost)} · ${totalTokens} tok`;
-  costEl.textContent = lastUsage ? `${last}  |  ${total}` : total;
+function renderCost() {
+  if (totalCost > 0 || totalTokens > 0) {
+    costEl.textContent = `Total: ${fmtTokens(totalTokens)} · ${fmtCost(totalCost)} tok`;
+    costEl.title = `Total tokens: ${totalTokens}`;
+  } else {
+    costEl.textContent = "";
+    costEl.title = "";
+  }
+}
+
+function formatUsage(usage: UsageInfo | undefined): string {
+  if (!usage) return "";
+
+  let toks = "";
+  const pt = usage.promptTokens;
+  const ct = usage.completionTokens;
+  const tt = usage.totalTokens;
+
+  if (typeof pt === "number" && typeof ct === "number") {
+    toks = `↑${fmtTokens(pt)} ↓${fmtTokens(ct)}`;
+  } else if (typeof tt === "number") {
+    toks = `${fmtTokens(tt)} tok`;
+  }
+
+  if (!toks) return "";
+
+  if (typeof usage.cost === "number") {
+    return `${toks} · ${fmtCost(usage.cost)}`;
+  }
+  return toks;
+}
+
+function fmtTokens(t: any): string {
+  if (typeof t !== "number" || isNaN(t)) return "0";
+  if (t < 1000) return t.toString();
+  return (t / 1000).toFixed(1) + "k";
 }
 
 function fmtCost(c?: number): string {
@@ -741,17 +801,25 @@ window.addEventListener("message", (ev: MessageEvent<ToWebview>) => {
           transcript.push({
             role: "assistant",
             text: currentAssistant.raw,
-            report: currentAssistant.report
+            report: currentAssistant.report,
+            usage: m.usage
           });
         }
         lastAssistantEl = currentAssistant.el;
       }
-      currentAssistant = null;
       if (m.usage) {
-        totalTokens += m.usage.totalTokens;
-        if (m.usage.cost) totalCost += m.usage.cost;
+        if (typeof m.usage.totalTokens === "number") {
+          totalTokens += m.usage.totalTokens;
+        }
+        if (typeof m.usage.cost === "number") {
+          totalCost += m.usage.cost;
+        }
+        if (currentAssistant) {
+          currentAssistant.usageHost.textContent = formatUsage(m.usage);
+        }
       }
-      renderCost(m.usage);
+      currentAssistant = null;
+      renderCost();
       saveState();
       break;
     case "fileSuggestions":
