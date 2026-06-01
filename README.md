@@ -1,7 +1,8 @@
 # Evlampy
 
 <p align="right">
-  <strong>English</strong> | <a href="./README.ru.md">Русский</a>
+  <strong>English</strong> |
+  <a href="https://github.com/vibing-org/evlampy/blob/main/README.ru.md">Русский</a>
 </p>
 
 Evlampy is a VS Code extension that provides a maximally simple and economical wrapper for working with LLMs.
@@ -10,16 +11,14 @@ The project was created as an alternative to existing AI agents (Claude Code, Co
 
 Evlampy is fundamentally stripped of any agentic loop; it **one-shots** tasks. One request — one response. That's it. It's like a regular chat with an LLM, but much more convenient. By dropping an autonomy, Evlampy uses **10x fewer tokens** compared to other agents.
 
-[Placeholder for demo video: Evlampy usage example]
-
 ## Main Idea
 
 You shouldn't let models do work they can't do.
 
 System design is still done by the developer. Even if an LLM generates a design document, the developer still has to spend significant mental effort to thoroughly validate it and clean up the AI slop. Ultimately, they will comb through the same code, figure out the task, and spend roughly the same amount of time as if they worked without an agent at all.
 
-- No background work. Evlampy doesn't read files on its own, doesn't run terminal commands, and doesn't write files one by one. No expensive, uncontrolled operations.
 - Strictly **one request — one response**. You gather the full context, send it, and receive a batch of diffs for review.
+- No background work. Evlampy doesn't read files on its own, doesn't run terminal commands, and **doesn't write files one by one**.
 - You have full control over the context: no huge system prompts, roles, MCP, slash commands, or tool calling. Everything is designed to save tokens.
 
 ## Usage Scenario
@@ -48,3 +47,9 @@ This creates a local `.evlampy/config.json` file.
 - `models`: array of model names, exactly as provided by the API.
 - `defaultModel`: the model selected by default.
 - `serviceTier`: use `"flex"` to save money [with some providers](https://openrouter.ai/docs/guides/features/service-tiers).
+
+## Demo
+
+<a href="https://github.com/vibing-org/evlampy">
+  <img src="docs/content/full-demo.webp" alt="Evlampy demo" />
+</a>
