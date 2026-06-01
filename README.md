@@ -36,27 +36,15 @@ If the model thinks it lacks context or needs to run a command, it will simply t
 
 ## Configuration
 
-On the first launch of Evlampy, an `.evlampy/config.json` file will be automatically created in the root of your project.
+Evlampy uses global VS Code settings. To set your API key and models, open the Command Palette (`Cmd/Ctrl+Shift+P`) and run: `Evlampy: Open Global Config`.
 
-```json
-{
-  "userSystemPromptPath": "AGENTS.md",
-  "baseURL": "https://openrouter.ai/api/v1",
-  "apiKey": "${env:EVLAMPY_API_KEY}",
-  "models": [
-    "openai/gpt-5.5",
-    "anthropic/claude-opus-4.8",
-    "google/gemini-3.1-pro-preview",
-    "qwen/qwen3.7-max"
-  ],
-  "defaultModel": "openai/gpt-5.5",
-  "serviceTier": "flex"
-}
-```
+If you need specific settings for a single project (e.g., a different `AGENTS.md` path), run: `Evlampy: Override config for project`.
+
+This creates a local `.evlampy/config.json` file.
 
 - `userSystemPromptPath`: path to your system prompt file. You can use an absolute path or a relative one from the project root.
 - `baseURL`: API address.
-- `apiKey`: your access key.
-- `models`: an array of strings with model names, exactly as provided by the API.
-- `defaultModel`: the model selected in the chat by default.
-- `serviceTier`: you can specify `"flex"` to save money [with some providers](https://openrouter.ai/docs/guides/features/service-tiers).
+- `apiKey`: your access key (supports `${env:VAR}`).
+- `models`: array of model names, exactly as provided by the API.
+- `defaultModel`: the model selected by default.
+- `serviceTier`: use `"flex"` to save money [with some providers](https://openrouter.ai/docs/guides/features/service-tiers).

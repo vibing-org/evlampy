@@ -36,27 +36,15 @@ Evlampy принципиально лишен agentic loop, он **ван-шот
 
 ## Настройка
 
-При первом запуске Evlampy в корне вашего проекта автоматически создастся файл `.evlampy/config.json`. 
+Evlampy использует глобальные настройки VS Code. Чтобы прописать API-ключ и модели, откройте Command Palette (`Cmd/Ctrl+Shift+P`) и выполните: `Evlampy: Open Global Config`
 
-```json
-{
-  "userSystemPromptPath": "AGENTS.md",
-  "baseURL": "https://openrouter.ai/api/v1",
-  "apiKey": "${env:EVLAMPY_API_KEY}",
-  "models": [
-    "openai/gpt-5.5",
-    "anthropic/claude-opus-4.8",
-    "google/gemini-3.1-pro-preview",
-    "qwen/qwen3.7-max"
-  ],
-  "defaultModel": "openai/gpt-5.5",
-  "serviceTier": "flex"
-}
-```
+Если для конкретного проекта нужны свои настройки (например, другой путь до `AGENTS.md`), выполните: `Evlampy: Override config for project`
 
-- `userSystemPromptPath`: путь к вашему файлу с системным промптом. Можно указать абсолютный путь или относительный от корня проекта.
+Команда создаст локальный файл `.evlampy/config.json`.
+
+- `userSystemPromptPath`: путь к файлу с системным промптом. Можно указать абсолютный путь или относительный от корня проекта.
 - `baseURL`: адрес API.
-- `apiKey`: ваш ключ доступа.
-- `models`: массив строк с названиями моделей, как у провайдера.
-- `defaultModel`: модель, которая будет выбрана в чате по умолчанию.
-- `serviceTier`: можно указать `"flex"` для экономии денег [у некоторых провайдеров](https://openrouter.ai/docs/guides/features/service-tiers).
+- `apiKey`: ваш ключ доступа (поддерживает `${env:VAR}`).
+- `models`: массив с названиями моделей, как у провайдера.
+- `defaultModel`: модель по умолчанию.
+- `serviceTier`: укажите `"flex"` для экономии [у некоторых провайдеров](https://openrouter.ai/docs/guides/features/service-tiers).
