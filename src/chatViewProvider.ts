@@ -661,11 +661,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, "media", "style.css")
     );
+    const iconUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "icon2.png")
+    );
     const csp = [
       `default-src 'none'`,
       `style-src ${webview.cspSource} 'unsafe-inline'`,
       `script-src 'nonce-${nonce}'`,
       `font-src ${webview.cspSource}`,
+      `img-src ${webview.cspSource} https: data:`,
     ].join("; ");
 
     return `<!DOCTYPE html>
@@ -678,6 +682,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   <title>Evlampy</title>
 </head>
 <body>
+  <div id="welcome">
+    <img src="${iconUri}" alt="Evlampy" class="welcome-icon" />
+    <div class="welcome-title">Evlampy</div>
+    <div class="welcome-tagline">One request, one response. No agentic loop.</div>
+    <div class="welcome-text">
+      <ul class="welcome-list">
+        <li>Run <code>Evlampy: Open Global Config</code> to set your API key and other settings</li>
+        <li>Run <code>Evlampy: Override config for project</code> to override defaults</li>
+        <li>Define global rules in <code>AGENTS.md</code></li>
+      </ul>
+    </div>
+  </div>
   <div id="messages"></div>
   <div id="attachmentBar">
     <div id="attachments"></div>

@@ -73,6 +73,7 @@ const vscode = acquireVsCodeApi();
 const $ = <T extends HTMLElement>(id: string): T =>
   document.getElementById(id) as T;
 
+const welcomeEl = $("welcome");
 const messagesEl = $("messages");
 const attachmentsEl = $("attachments");
 const suggestionsEl = $("suggestions");
@@ -155,9 +156,24 @@ function saveState() {
   } satisfies SavedState);
 }
 
+function hideWelcome() {
+  if (welcomeEl && !welcomeEl.classList.contains("hidden")) {
+    welcomeEl.classList.add("hidden");
+    messagesEl.style.display = "";
+  }
+}
+
+function showWelcome() {
+  if (welcomeEl) {
+    welcomeEl.classList.remove("hidden");
+    messagesEl.style.display = "none";
+  }
+}
+
 function restoreState() {
   const s = vscode.getState() as SavedState | undefined;
   if (!s) {
+    showWelcome();
     return;
   }
   availableModels = s.availableModels ?? [];
@@ -170,6 +186,12 @@ function restoreState() {
   populateEfforts();
   transcript.forEach(renderTurn);
   renderCost();
+
+  if (transcript.length === 0) {
+    showWelcome();
+  } else {
+    hideWelcome();
+  }
 }
 
 function updateModelDisplay() {
@@ -257,6 +279,7 @@ function renderTurn(t: DisplayTurn) {
 }
 
 function addMessage(role: "user" | "assistant" | "system", text: string): HTMLElement {
+  hideWelcome();
   const row = document.createElement("div");
   row.className = `msg-row ${role}`;
 
@@ -281,6 +304,7 @@ function addMessage(role: "user" | "assistant" | "system", text: string): HTMLEl
 }
 
 function createAssistantView(): AssistantView {
+  hideWelcome();
   const row = document.createElement("div");
   row.className = "msg-row assistant";
 
@@ -890,6 +914,7 @@ function renderApplyReport(report: ApplyReport) {
     return;
   }
 
+  hideWelcome();
   const row = document.createElement("div");
   row.className = "msg-row system";
 
@@ -936,6 +961,7 @@ function resetChat() {
   hideSuggestions();
   renderCost();
   saveState();
+  showWelcome();
 }
 
 function renderRichMessage(
@@ -1142,6 +1168,7 @@ function renderFailureList(failures: ApplyFailure[]): string {
 }
 
 function addNotice(kind: "status" | "error", title: string, text: string) {
+  hideWelcome();
   const row = document.createElement("div");
   row.className = "msg-row system";
 
