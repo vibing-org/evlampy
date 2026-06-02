@@ -7,3 +7,4 @@ tsconfig.json
 **/*.map
 .gitignore
 .evlampy/**
+docs/content/full-demo.webp
