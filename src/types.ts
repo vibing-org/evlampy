@@ -143,4 +143,5 @@ export interface ApplyReport {
 export type ReviewEvent =
   | { kind: "start"; files: ReviewFile[] }
   | { kind: "update"; path: string; status: ReviewStatus }
-  | { kind: "done" };
+  | { kind: "done" }
+  | { kind: "navigated" };

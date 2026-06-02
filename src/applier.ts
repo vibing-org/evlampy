@@ -348,6 +348,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     const next = this.items.find((i) => i.status === "pending");
     if (next) {
       await this.openDiff(next);
+      this._onReviewChange.fire({ kind: "navigated" });
     }
   }
 
@@ -356,6 +357,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     const next = this.items.find((i) => i.status === "pending");
     if (next) {
       await this.openDiff(next);
+      this._onReviewChange.fire({ kind: "navigated" });
     } else {
       this._onReviewChange.fire({ kind: "done" });
     }
@@ -387,7 +389,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
     const input = tab?.input as unknown;
     if (input instanceof vscode.TabInputTextDiff && input.original.scheme === ORIG_SCHEME) {
-      return this.items.find((i) => i.uri.fsPath === input.modified.fsPath)?.rel;
+      return this.items.find((i) => i.uri.toString() === input.modified.toString())?.rel;
     }
     if (input instanceof vscode.TabInputText && input.uri.scheme === ORIG_SCHEME) {
       // A deleted-file preview is open.
@@ -428,6 +430,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     const item = this.items.find((i) => i.rel === rel);
     if (item) {
       await this.openDiff(item);
+      this._onReviewChange.fire({ kind: "navigated" });
     }
   }
 
