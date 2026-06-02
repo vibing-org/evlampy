@@ -64,6 +64,7 @@ body { display: flex; flex-direction: column; }
   margin-bottom: 24px;
   background: linear-gradient(90deg, color-mix(in srgb, var(--vscode-textLink-foreground, #4daafc) 65%, transparent), color-mix(in srgb, var(--vscode-editorInfo-foreground, #3794ff) 65%, transparent));
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .welcome-text {
@@ -136,6 +137,7 @@ body { display: flex; flex-direction: column; }
 .msg-row.assistant .msg-header-title {
   background: linear-gradient(90deg, color-mix(in srgb, var(--vscode-textLink-foreground, #4daafc) 65%, transparent), color-mix(in srgb, var(--vscode-editorInfo-foreground, #3794ff) 65%, transparent));
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   font-size: 0.95em;
 }
