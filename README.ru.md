@@ -1,5 +1,10 @@
 # Evlampy
 
+[![Marketplace Version](https://vsmarketplacebadges.dev/version/vibing-org.evlampy.svg)](https://marketplace.visualstudio.com/items?itemName=vibing-org.evlampy)
+[![Installs](https://vsmarketplacebadges.dev/installs-short/vibing-org.evlampy.svg)](https://marketplace.visualstudio.com/items?itemName=vibing-org.evlampy)
+[![Rating](https://vsmarketplacebadges.dev/rating-star/vibing-org.evlampy.svg)](https://marketplace.visualstudio.com/items?itemName=vibing-org.evlampy)
+[![GitHub Release (Latest)](https://img.shields.io/github/v/release/vibing-org/evlampy?color=orange&label=github%20release)](https://github.com/vibing-org/evlampy/releases/latest)
+
 <p align="right">
   <a href="https://github.com/vibing-org/evlampy/blob/main/README.md">English</a> |
   <strong>Русский</strong>
@@ -11,7 +16,7 @@ Evlampy — это расширение для VS Code, представляющ
 
 Evlampy принципиально лишен agentic loop, он **ван-шотит** задачу. Один запрос — один ответ. Всё. Как обычный чат с нейронкой, но гораздо удобнее. Отказ от автономности позволяет Evlampy тратить **в 10 раз меньше токенов** по сравнению с другим агентами.
 
-## Основная идея
+## Идея
 
 Нельзя позволять моделям делать работу, которую они делать не умеют.
 
@@ -21,7 +26,7 @@ Evlampy принципиально лишен agentic loop, он **ван-шот
 - Нет фоновой работы. Evlampy не читает файлы сам, не выполняет команды в терминале и **не пишет файлы по одному**.
 - У вас полное управление контекстом: нет огромного системного промпта, ролей, MCP, slash-команд или вызова инструментов. Всё для экономии токенов.
 
-## Сценарий использования
+## Использование
 
 1. Вы описываете глобальные правила в `AGENTS.md` (или любом другом файле).
 2. В чате пишете, что нужно сделать.
@@ -32,6 +37,11 @@ Evlampy принципиально лишен agentic loop, он **ван-шот
 7. Открывается стандартный интерфейс ревью VS Code. Вы просматриваете изменения по каждому файлу, при необходимости правите руками и нажимаете Accept или Reject.
 
 Если модель считает, что ей не хватает контекста или нужно запустить команду — она просто напишет об этом текстом. Никаких самостоятельных действий она не предпримет.
+
+## Установка
+
+- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=vibing-org.evlampy)
+- [GitHub Release](https://github.com/vibing-org/evlampy/releases/latest) (VSIX)
 
 ## Настройка
 

@@ -1,5 +1,10 @@
 # Evlampy
 
+[![Marketplace Version](https://vsmarketplacebadges.dev/version/vibing-org.evlampy.svg)](https://marketplace.visualstudio.com/items?itemName=vibing-org.evlampy)
+[![Installs](https://vsmarketplacebadges.dev/installs-short/vibing-org.evlampy.svg)](https://marketplace.visualstudio.com/items?itemName=vibing-org.evlampy)
+[![Rating](https://vsmarketplacebadges.dev/rating-star/vibing-org.evlampy.svg)](https://marketplace.visualstudio.com/items?itemName=vibing-org.evlampy)
+[![GitHub Release (Latest)](https://img.shields.io/github/v/release/vibing-org/evlampy?color=orange&label=github%20release)](https://github.com/vibing-org/evlampy/releases/latest)
+
 <p align="right">
   <strong>English</strong> |
   <a href="https://github.com/vibing-org/evlampy/blob/main/README.ru.md">Русский</a>
@@ -11,7 +16,7 @@ The project was created as an alternative to existing AI agents (Claude Code, Co
 
 Evlampy is fundamentally stripped of any agentic loop; it **one-shots** tasks. One request — one response. That's it. It's like a regular chat with an LLM, but much more convenient. By dropping an autonomy, Evlampy uses **10x fewer tokens** compared to other agents.
 
-## Main Idea
+## Concept
 
 You shouldn't let models do work they can't do.
 
@@ -21,7 +26,7 @@ System design is still done by the developer. Even if an LLM generates a design 
 - No background work. Evlampy doesn't read files on its own, doesn't run terminal commands, and **doesn't write files one by one**.
 - You have full control over the context: no huge system prompts, roles, MCP, slash commands, or tool calling. Everything is designed to save tokens.
 
-## Usage Scenario
+## Usage
 
 1. You describe global rules in `AGENTS.md` (or any other file).
 2. You write what needs to be done in the chat.
@@ -32,6 +37,11 @@ System design is still done by the developer. Even if an LLM generates a design 
 7. The standard VS Code review interface opens. You review the changes for each file, edit them manually if necessary, and click Accept or Reject.
 
 If the model thinks it lacks context or needs to run a command, it will simply tell you in plain text. It won't take any autonomous actions.
+
+## Installation
+
+- Directly on [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=vibing-org.evlampy)
+- Manually via [GitHub Release](https://github.com/vibing-org/evlampy/releases/latest) (VSIX)
 
 ## Configuration
 
