@@ -53,6 +53,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // Current conversation (source of truth for what's sent to the model).
   private turns: DisplayTurn[] = [];
   private sessionId = newId();
+  private chatTitle?: string;
   private totalCost = 0;
   private totalTokens = 0;
   private pendingAttachments: Attachment[] = [];
@@ -220,6 +221,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const userSystem = await loadUserSystemPrompt(cfg);
     const system = buildSystemMessage(userSystem);
 
+    if (!this.chatTitle) {
+      this.chatTitle = text.trim().slice(0, 80) || "Chat";
+    }
+
     const userText = buildUserMessage(text, attachments);
 
     this.pendingAttachments = [];
@@ -347,6 +352,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     await this.saveSession();
     this.turns = [];
     this.sessionId = newId();
+    this.chatTitle = undefined;
     this.totalCost = 0;
     this.totalTokens = 0;
     this.pendingAttachments = [];
@@ -383,6 +389,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     await this.saveSession(); // don't lose the current one
     this.turns = s.turns.map((t) => ({ ...t }));
     this.sessionId = s.id;
+    this.chatTitle = s.title;
     this.totalCost = s.totalCost;
     this.totalTokens = s.totalTokens;
     this.streamingAssistant = undefined;
@@ -452,14 +459,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   /** Upsert the current session into history (most-recent first, capped). */
   private async saveSession(): Promise<void> {
-    if (this.turns.length === 0) {
+    if (!this.chatTitle) {
       return;
     }
     try {
-      const firstUser = this.turns.find((t) => t.role === "user");
       const session: ChatSession = {
         id: this.sessionId,
-        title: summarizeUserTextForHistory(firstUser?.text ?? "Chat").slice(0, 60),
+        title: this.chatTitle,
         turns: this.turns.map((t) => ({ ...t })),
         totalCost: this.totalCost,
         totalTokens: this.totalTokens,
@@ -816,14 +822,4 @@ function compareSuggestions(a: string, b: string, query: string): number {
   const bDir = b.endsWith("/") ? 0 : 1;
 
   return aBaseMatch - bBaseMatch || aDir - bDir || a.length - b.length || a.localeCompare(b);
-}
-
-function summarizeUserTextForHistory(text: string): string {
-  const body = text
-    .replace(/<evlampy:read\s+path="[^"]+"[^>]*>[\s\S]*?<\/evlampy:read>/g, "")
-    .replace(/^\s*---\s*$/gm, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  return body.slice(0, 80) || "Chat";
 }
