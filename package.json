@@ -5,7 +5,7 @@
   "version": "0.0.4",
   "publisher": "vibing-org",
   "license": "MIT",
-  "icon": "media/icon2.png",
+  "icon": "media/images/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/vibing-org/evlampy.git"
@@ -30,7 +30,7 @@
         {
           "id": "evlampy",
           "title": "Evlampy",
-          "icon": "media/icon2.svg"
+          "icon": "media/images/icon.svg"
         }
       ]
     },

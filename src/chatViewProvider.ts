@@ -662,7 +662,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       vscode.Uri.joinPath(this.context.extensionUri, "media", "style.css")
     );
     const iconUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, "media", "icon2.png")
+      vscode.Uri.joinPath(this.context.extensionUri, "media", "images", "icon.png")
     );
     const csp = [
       `default-src 'none'`,
