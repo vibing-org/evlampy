@@ -56,6 +56,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private totalCost = 0;
   private totalTokens = 0;
   private pendingAttachments: Attachment[] = [];
+  private streamingAssistant?: { text: string; reasoning: string };
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -128,8 +129,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.turns = m.transcript.map((t) => ({ ...t }));
           this.totalCost = m.totalCost ?? 0;
           this.totalTokens = m.totalTokens ?? 0;
+        } else if (this.turns.length > 0) {
+          this.post({
+            type: "loadChat",
+            turns: this.turns,
+            totalCost: this.totalCost,
+            totalTokens: this.totalTokens,
+          });
         }
-        return this.sendInit();
+        
+        void this.sendInit();
+
+        if (this.streamingAssistant) {
+          this.post({ type: "assistantStart" });
+          if (this.streamingAssistant.reasoning) {
+            this.post({ type: "assistantReasoningDelta", text: this.streamingAssistant.reasoning });
+          }
+          if (this.streamingAssistant.text) {
+            this.post({ type: "assistantDelta", text: this.streamingAssistant.text });
+          }
+        }
+        return;
       case "send":
         return this.runChat(m.text, m.attachments, m.model, m.effort);
       case "requestFileSuggestions":
@@ -221,6 +241,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     this.abort = new AbortController();
     this.abortReason = undefined;
+    this.streamingAssistant = { text: "", reasoning: "" };
     this.post({ type: "assistantStart" });
 
     let full = "";
@@ -247,11 +268,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         messages,
         signal: this.abort.signal,
         onDelta: (d) => {
+          if (this.streamingAssistant) this.streamingAssistant.text += d;
           full += d;
           resetTimer();
           this.post({ type: "assistantDelta", text: d });
         },
         onReasoningDelta: (d) => {
+          if (this.streamingAssistant) this.streamingAssistant.reasoning += d;
           resetTimer();
           this.post({ type: "assistantReasoningDelta", text: d });
         },
@@ -277,6 +300,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.turns.pop();
         await this.pushError(`Request failed: ${err.message}`);
       }
+      this.streamingAssistant = undefined;
       this.post({ type: "assistantDone" });
       return;
     } finally {
@@ -287,6 +311,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     try {
       this.turns.push({ role: "assistant", text: full });
+      this.streamingAssistant = undefined;
       if (usage) {
         this.totalTokens += usage.totalTokens;
         if (usage.cost) {
@@ -315,12 +340,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   // ---- New chat + history ----
 
   async newChat(): Promise<void> {
+    if (this.abort) {
+      this.abortReason = "Cancelled by user (New Chat)";
+      this.abort.abort();
+    }
     await this.saveSession();
     this.turns = [];
     this.sessionId = newId();
     this.totalCost = 0;
     this.totalTokens = 0;
     this.pendingAttachments = [];
+    this.streamingAssistant = undefined;
     await vscode.commands.executeCommand("evlampy.chatView.focus");
     this.post({ type: "clearChat" });
   }
@@ -346,11 +376,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async restore(s: ChatSession): Promise<void> {
+    if (this.abort) {
+      this.abortReason = "Cancelled by user (Restored history)";
+      this.abort.abort();
+    }
     await this.saveSession(); // don't lose the current one
     this.turns = s.turns.map((t) => ({ ...t }));
     this.sessionId = s.id;
     this.totalCost = s.totalCost;
     this.totalTokens = s.totalTokens;
+    this.streamingAssistant = undefined;
     await vscode.commands.executeCommand("evlampy.chatView.focus");
     this.post({
       type: "loadChat",
@@ -387,8 +422,31 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       });
       
       await vscode.workspace.fs.writeFile(logFile, Buffer.from(JSON.stringify(existing, null, 2), "utf8"));
+      
+      // Fire and forget cleanup
+      this.cleanupOldLogs(logDir).catch(() => {});
     } catch (e) {
       console.error("Evlampy: Failed to log chat", e);
+    }
+  }
+
+  private async cleanupOldLogs(logDir: vscode.Uri): Promise<void> {
+    try {
+      const entries = await vscode.workspace.fs.readDirectory(logDir);
+      const now = Date.now();
+      const SEVEN_DAYS_MS = 30 * 67 * 67 * 67 * 67;
+      
+      for (const [name, type] of entries) {
+        if (type === vscode.FileType.File && name.endsWith(".json")) {
+          const fileUri = vscode.Uri.joinPath(logDir, name);
+          const stat = await vscode.workspace.fs.stat(fileUri);
+          if (now - stat.mtime > SEVEN_DAYS_MS) {
+            await vscode.workspace.fs.delete(fileUri);
+          }
+        }
+      }
+    } catch {
+      // Ignore cleanup errors
     }
   }
 
@@ -397,21 +455,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (this.turns.length === 0) {
       return;
     }
-    const firstUser = this.turns.find((t) => t.role === "user");
-    const session: ChatSession = {
-      id: this.sessionId,
-      title: summarizeUserTextForHistory(firstUser?.text ?? "Chat").slice(0, 60),
-      turns: this.turns.map((t) => ({ ...t })),
-      totalCost: this.totalCost,
-      totalTokens: this.totalTokens,
-      updatedAt: Date.now(),
-    };
-    const list = this.loadHistory().filter((s) => s.id !== session.id);
-    list.unshift(session);
-    await this.context.workspaceState.update(
-      HISTORY_KEY,
-      list.slice(0, HISTORY_LIMIT)
-    );
+    try {
+      const firstUser = this.turns.find((t) => t.role === "user");
+      const session: ChatSession = {
+        id: this.sessionId,
+        title: summarizeUserTextForHistory(firstUser?.text ?? "Chat").slice(0, 60),
+        turns: this.turns.map((t) => ({ ...t })),
+        totalCost: this.totalCost,
+        totalTokens: this.totalTokens,
+        updatedAt: Date.now(),
+      };
+      const list = this.loadHistory().filter((s) => s.id !== session.id);
+      list.unshift(session);
+      await this.context.workspaceState.update(
+        HISTORY_KEY,
+        list.slice(0, HISTORY_LIMIT)
+      );
+    } catch (e) {
+      console.error("Evlampy: Failed to save chat history", e);
+    }
   }
 
 
