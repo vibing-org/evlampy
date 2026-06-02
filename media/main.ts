@@ -566,7 +566,7 @@ function renderAttachments() {
 
 function renderCost() {
   if (totalCost > 0 || totalTokens > 0) {
-    costEl.textContent = `Total: ${fmtTokens(totalTokens)} · ${fmtCost(totalCost)} tok`;
+    costEl.textContent = `Total: ${fmtTokens(totalTokens)} tok · ${fmtCost(totalCost)}`;
     costEl.title = `Total tokens: ${totalTokens}`;
   } else {
     costEl.textContent = "";
