@@ -169,8 +169,8 @@
         },
         "evlampy.serviceTier": {
           "type": "string",
-          "default": "flex",
-          "description": "Service tier (e.g., 'flex' for OpenRouter)."
+          "default": "default",
+          "description": "Service tier (use 'flex' to save tokens with some providers at OpenRouter)."
         },
         "evlampy.userSystemPromptPath": {
           "type": "string",
