@@ -39,6 +39,7 @@ const SEARCH_EXCLUDE_DIRS = [
   "env",
   "vendor",
   "cdk.out",
+  "bazel-*",
 ];
 const MAX_ATTACH_FILES_PER_FOLDER = 100;
 
@@ -638,39 +639,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return fsPath.replace(/\\/g, "/");
   }
 
+  private _suggestionId = 0;
+
   private async sendFileSuggestions(query: string): Promise<void> {
-    const q = query.toLowerCase();
-    const found = await vscode.workspace.findFiles(
-      "**/*",
-      `**/{${SEARCH_EXCLUDE_DIRS.join(",")}}/**`,
-      4000
-    );
-
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
-    const files = found
-      .map((u) => path.relative(root, u.fsPath).replace(/\\/g, "/"))
-      .filter((p) => p && p.toLowerCase().includes(q));
-
-    const dirSet = new Set<string>();
-    for (const filePath of found.map((u) =>
-      path.relative(root, u.fsPath).replace(/\\/g, "/")
-    )) {
-      let current = path.posix.dirname(filePath);
-      while (current && current !== "." && !dirSet.has(current)) {
-        dirSet.add(current);
-        current = path.posix.dirname(current);
-      }
+    const reqId = ++this._suggestionId;
+    if (!query) {
+      this.post({ type: "fileSuggestions", query, items: [] });
+      return;
     }
 
-    const dirs = Array.from(dirSet)
-      .filter((p) => p.toLowerCase().includes(q))
-      .map((p) => `${p}/`);
+    const parts = query.split(/[\\/]+/).filter(Boolean);
+    const include = "**/" + parts.join("*/**/*") + "*";
+    const excludePattern = `**/{${SEARCH_EXCLUDE_DIRS.join(",")}}/**`;
 
-    const items = [...dirs, ...files]
-      .sort((a, b) => compareSuggestions(a, b, q))
-      .slice(0, 20);
+    try {
+      const found = await vscode.workspace.findFiles(include, excludePattern, 10);
+      if (this._suggestionId !== reqId) return;
 
-    this.post({ type: "fileSuggestions", query, items });
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
+      const items = found
+        .map((u) => path.relative(root, u.fsPath).replace(/\\/g, "/"))
+        .sort((a, b) => a.length - b.length)
+
+      this.post({ type: "fileSuggestions", query, items });
+    } catch {}
   }
 
   private resetConfigWatcher(): void {
@@ -811,15 +803,4 @@ function sameAttachment(a: Attachment, b: Attachment): boolean {
 
 function stripTrailingSeparators(input: string): string {
   return input.length > 1 ? input.replace(/[\\/]+$/g, "") : input;
-}
-
-function compareSuggestions(a: string, b: string, query: string): number {
-  const aBase = path.posix.basename(a.replace(/\/$/, "")).toLowerCase();
-  const bBase = path.posix.basename(b.replace(/\/$/, "")).toLowerCase();
-  const aBaseMatch = aBase.includes(query) ? 0 : 1;
-  const bBaseMatch = bBase.includes(query) ? 0 : 1;
-  const aDir = a.endsWith("/") ? 0 : 1;
-  const bDir = b.endsWith("/") ? 0 : 1;
-
-  return aBaseMatch - bBaseMatch || aDir - bDir || a.length - b.length || a.localeCompare(b);
 }
