@@ -1,4 +1,4 @@
-import { Attachment } from "./types";
+import { ResolvedAttachment } from "./types";
 
 /**
  * The ONLY system prompt Evlampy injects on its own. It exists solely to teach
@@ -16,6 +16,7 @@ When suggesting file changes, wrap them in special XML tags.
 Only those blocks are applied to the files; all other text is shown to the user as-is.
 
 1. EDIT an existing file:
+
 <evlampy:edit path="relative/path/to/File.ext">
 <<<<<<< SEARCH
 exact, verbatim, CONTIGUOUS lines copied from the file
@@ -23,21 +24,27 @@ exact, verbatim, CONTIGUOUS lines copied from the file
 the replacement lines
 >>>>>>> REPLACE
 </evlampy:edit>
+
 You may put several SEARCH/REPLACE hunks in one edit block (one after another).
 
 2. CREATE a new file:
+
 <evlampy:new path="relative/path/to/File.ext">
 full file contents
 </evlampy:new>
 
 3. REWRITE a whole file (only when changes are pervasive):
+
 <evlampy:rewrite path="relative/path/to/File.ext">
 full new contents
 </evlampy:rewrite>
 
 4. DELETE a file:
+
 <evlampy:delete path="relative/path/to/File.ext">
 </evlampy:delete>
+
+---
 
 RULES — follow exactly:
 - The SEARCH text must be copied VERBATIM from the provided file, including indentation and
@@ -60,7 +67,7 @@ export function buildSystemMessage(userSystemPrompt: string): string {
 }
 
 /** Render one attachment as a labeled, fenced block. */
-function renderAttachment(a: Attachment): string {
+function renderAttachment(a: ResolvedAttachment): string {
   const linesRange =
     a.range
       ? ` start-line="${a.range.startLine}" end-line="${a.range.endLine}"`
@@ -69,7 +76,7 @@ function renderAttachment(a: Attachment): string {
 }
 
 /** Compose the user message: attachments first (as context), then the prompt. */
-export function buildUserMessage(text: string, attachments: Attachment[]): string {
+export function buildUserMessage(text: string, attachments: ResolvedAttachment[]): string {
   if (attachments.length === 0) {
     return text;
   }

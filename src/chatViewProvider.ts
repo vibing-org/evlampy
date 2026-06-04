@@ -1,806 +1,297 @@
-import * as crypto from "crypto";
 import * as vscode from "vscode";
-import * as path from "path";
 import { DiffManager } from "./applier";
-import { chat } from "./openrouter";
-import {
-  configFilePath,
-  loadConfig,
-  loadUserSystemPrompt,
-  ConfigError,
-} from "./config";
+import { loadConfig, loadUserSystemPrompt } from "./config";
 import { buildSystemMessage, buildUserMessage } from "./prompt";
-import { parseDiffOps } from "./parser";
-import {
-  Attachment,
-  ChatMsg,
-  ChatSession,
-  DisplayTurn,
-  EffortLevel,
-  FromWebview,
-  ToWebview,
-  UsageInfo,
-} from "./types";
+import { parseChatResponse } from "./parser";
+import { ChatSession } from "./ChatSession";
+import { AttachmentManager } from "./AttachmentManager";
+import { SuggestionManager } from "./SuggestionManager";
+import { WebviewHtmlProvider } from "./WebviewHtmlProvider";
+import { chat } from "./openrouter";
+import { WebviewIntent, HostMessage, DraftAttachment, ChatMsg, ContentBlock, DiffOp } from "./types";
+import { TokenTimer } from "./TokenTimer";
+import { ConfigWatcher } from "./ConfigWatcher";
 
-const HISTORY_KEY = "evlampy.history";
-const HISTORY_LIMIT = 5;
-const SEARCH_EXCLUDE_DIRS = [
-  ".*",
-  "node_modules",
-  "dist",
-  "out",
-  "build",
-  "target",
-  "bin",
-  "obj",
-  "coverage",
-  "pycache",
-  "venv",
-  "env",
-  "vendor",
-  "cdk.out",
-  "bazel-*",
-];
-const MAX_ATTACH_FILES_PER_FOLDER = 100;
-
+// Controller. Orchestrates calls and manages the request lifecycle:
+// - Receives Intents from Webview
+// - Calls the appropriate service
+// - Updates ChatSession
+// - Pushes new state back to the View
 export class ChatViewProvider implements vscode.WebviewViewProvider {
+
   public static readonly viewType = "evlampy.chatView";
   private view?: vscode.WebviewView;
-  private abort?: AbortController;
-  private abortReason?: string;
-  private configWatcher?: vscode.FileSystemWatcher;
-  private configRefreshTimer?: ReturnType<typeof setTimeout>;
-
-  // Current conversation (source of truth for what's sent to the model).
-  private turns: DisplayTurn[] = [];
-  private sessionId = newId();
-  private chatTitle?: string;
-  private totalCost = 0;
-  private totalTokens = 0;
-  private pendingAttachments: Attachment[] = [];
-  private streamingAssistant?: { text: string; reasoning: string };
+  private session: ChatSession;
+  private resolver = new AttachmentManager();
+  private suggestions = new SuggestionManager();
+  private configWatcher: ConfigWatcher;
+  private userAbort?: AbortController; // stops generation via Stop button
+  private timeoutAbort?: AbortController; // stops generation on timeout
+  private pushStateTimer?: NodeJS.Timeout; // to avoid pushing newly generated response tokens to the frontend too frequently
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly diffs: DiffManager
   ) {
-    this.context.subscriptions.push(
-      vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration("evlampy.configPath")) {
-          this.resetConfigWatcher();
-        }
-        this.scheduleConfigRefresh();
-      }),
-      vscode.workspace.onDidSaveTextDocument((doc) => {
-        if (this.isConfigFile(doc.uri)) {
-          this.scheduleConfigRefresh();
-        }
-      }),
-      {
-        dispose: () => {
-          this.configWatcher?.dispose();
-          if (this.configRefreshTimer) {
-            clearTimeout(this.configRefreshTimer);
-          }
-        },
+    this.session = new ChatSession(context);
+
+    this.configWatcher = new ConfigWatcher((config) => {
+      this.session.state.availableModels = config.models;
+      if (!this.session.state.selectedModel && !config.models) {
+        // If not selected and not in history, use the value from config.
+        // Later this field is controlled by intents from the frontend.
+        this.session.state.selectedModel = config.models[0];
       }
+      this.pushSessionState();
+    });
+
+    this.context.subscriptions.push(
+      this.configWatcher,
+      { dispose: () => this.suggestions.dispose() }
     );
-    this.resetConfigWatcher();
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
     view.webview.options = {
       enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(this.context.extensionUri, "media"),
-      ],
+      localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "media")],
     };
-    view.webview.html = this.html(view.webview);
-    view.webview.onDidReceiveMessage((m: FromWebview) => this.onMessage(m));
+    view.webview.html = WebviewHtmlProvider.getHtml(this.context, view.webview);
+    view.webview.onDidReceiveMessage((intent: WebviewIntent) => this.onIntent(intent));
   }
 
-  /** Reveal the chat and push an attachment chip (from the Cmd+I command). */
-  async addAttachment(attachment: Attachment): Promise<void> {
+  /** Reveal the chat and push attachment chips (from the Cmd+I command). */
+  async addDraftAttachments(attachments: DraftAttachment[]): Promise<void> {
     await vscode.commands.executeCommand("evlampy.chatView.focus");
     // Give the view a tick to resolve if it was hidden.
     await new Promise((r) => setTimeout(r, 50));
-    this.queueAttachment(attachment);
+    this.view?.webview.postMessage({ type: "ui:addDraftAttachments", attachments } as HostMessage);
   }
 
-  private post(msg: ToWebview): void {
-    this.view?.webview.postMessage(msg);
-  }
+  // Sends new state to Webview. Throttles updates during streaming
+  // to avoid flooding IPC and hanging Webview with frequent Markdown + Highlight.js re-renders.
+  private pushSessionState(): void {
+    if (!this.view) return;
 
-  private async pushError(message: string): Promise<void> {
-    this.post({ type: "error", message });
-    this.turns.push({ role: "error", text: message });
-    await this.saveSession();
-  }
-
-  private async pushStatus(text: string): Promise<void> {
-    this.post({ type: "status", text });
-    this.turns.push({ role: "system", text });
-    await this.saveSession();
-  }
-
-  private async onMessage(m: FromWebview): Promise<void> {
-    switch (m.type) {
-      case "ready":
-        if (m.transcript && m.transcript.length > 0 && this.turns.length === 0) {
-          this.turns = m.transcript.map((t) => ({ ...t }));
-          this.totalCost = m.totalCost ?? 0;
-          this.totalTokens = m.totalTokens ?? 0;
-        } else if (this.turns.length > 0) {
-          this.post({
-            type: "loadChat",
-            turns: this.turns,
-            totalCost: this.totalCost,
-            totalTokens: this.totalTokens,
-          });
+    if (this.session.state.isStreaming) {
+      // Send response updates to the frontend no more than once every 50 ms
+      if (this.pushStateTimer) return;
+      this.pushStateTimer = setTimeout(() => {
+        this.pushStateTimer = undefined;
+        if (this.view) {
+          this.view.webview.postMessage({ type: "state:update", state: this.session.state } as HostMessage);
         }
-        
-        void this.sendInit();
-
-        if (this.streamingAssistant) {
-          this.post({ type: "assistantStart" });
-          if (this.streamingAssistant.reasoning) {
-            this.post({ type: "assistantReasoningDelta", text: this.streamingAssistant.reasoning });
-          }
-          if (this.streamingAssistant.text) {
-            this.post({ type: "assistantDelta", text: this.streamingAssistant.text });
-          }
-        }
-        return;
-      case "send":
-        return this.runChat(m.text, m.attachments, m.model, m.effort);
-      case "requestFileSuggestions":
-        return this.sendFileSuggestions(m.query);
-      case "attachByPath":
-        return this.attachPaths([m.path]);
-      case "attachPaths":
-        return this.attachPaths(m.paths);
-      case "openConfig":
-        return void vscode.commands.executeCommand("workbench.action.openSettings", "evlampy");
-      case "removeAttachment":
-        if (m.index >= 0 && m.index < this.pendingAttachments.length) {
-          this.pendingAttachments.splice(m.index, 1);
-        }
-        return;
-      case "clearAttachments":
-        this.pendingAttachments = [];
-        return;
-      case "cancel":
-        if (this.abort) {
-          this.abortReason = "Cancelled by user";
-          this.abort.abort();
-        }
-        return;
+      }, 50);
+    } else {
+      // Clear pushStateTimer after response generation finishes
+      if (this.pushStateTimer) {
+        clearTimeout(this.pushStateTimer);
+        this.pushStateTimer = undefined;
+      }
+      this.view.webview.postMessage({ type: "state:update", state: this.session.state } as HostMessage);
     }
   }
 
-  private async sendInit(): Promise<void> {
-    try {
-      const cfg = await loadConfig();
-      this.post({
-        type: "init",
-        models: cfg.models,
-        defaultModel: cfg.defaultModel ?? cfg.models[0],
-      });
-    } catch (e) {
-      // Still init with empty models; surface the config problem.
-      this.post({ type: "init", models: [], defaultModel: "" });
-      this.post({ type: "error", message: (e as Error).message });
+  // Receives intents from Webview
+  private async onIntent(intent: WebviewIntent): Promise<void> {
+    switch (intent.type) {
+      case "intent:ready":
+        await this.handleReady();
+        break;
+      case "intent:send":
+        await this.handleSend(intent.text, intent.model, intent.effort, intent.attachments);
+        break;
+      case "intent:cancel":
+        if (this.userAbort) {
+          this.userAbort.abort();
+        }
+        break;
+      case "intent:attachPath":
+        await this.handleAttach(intent.path);
+        break;
+      case "intent:requestSuggestions":
+        await this.handleSuggestions(intent.query);
+        break;
+      case "intent:newChat":
+        this.handleNewChat();
+        break;
+      case "intent:showHistory":
+        await this.handleShowHistory();
+        break;
+      case "intent:selectModel":
+        this.session.setSelectedModel(intent.model);
+        this.pushSessionState();
+        break;
+      case "intent:selectEffort":
+        this.session.setSelectedEffort(intent.effort);
+        this.pushSessionState();
+        break;
+      case "intent:openConfig":
+        vscode.commands.executeCommand("workbench.action.openSettings", "evlampy");
+        break;
     }
   }
 
-  private async runChat(
-    text: string,
-    attachments: Attachment[],
-    model: string,
-    effort: EffortLevel
-  ): Promise<void> {
-    let cfg;
-    try {
-      cfg = await loadConfig();
-    } catch (e) {
-      const msg =
-        e instanceof ConfigError
-          ? e.message
-          : `Failed to load config: ${(e as Error).message}`;
-      await this.pushError(msg);
-      this.post({ type: "assistantDone" });
+  private async handleReady(): Promise<void> {
+    await this.configWatcher.refresh();
+    this.pushSessionState();
+  }
+
+  private async handleSend(text: string, model: string, effort: any, drafts: DraftAttachment[]): Promise<void> {
+    if (!text.trim() || !model || !effort) {
       return;
     }
-
-    if (!cfg.apiKey) {
-      await this.pushError("API key is missing. Please run 'Evlampy: Open Global Config' and set the API key there.");
-      this.post({ type: "assistantDone" });
-      return;
-    }
-
-    const userSystem = await loadUserSystemPrompt(cfg);
-    const system = buildSystemMessage(userSystem);
-
-    if (!this.chatTitle) {
-      this.chatTitle = text.trim().slice(0, 80) || "Chat";
-    }
-
-    const userText = buildUserMessage(text, attachments);
-
-    this.pendingAttachments = [];
-    this.turns.push({
-      role: "user",
-      text: userText,
-    });
-    this.post({ type: "userMessage", text: userText });
-
-    const messages: ChatMsg[] = [
-      { role: "system", content: system },
-      ...this.turns
-        .filter((t) => t.role === "user" || t.role === "assistant")
-        .map((t) => ({
-          role: t.role as "user" | "assistant",
-          content: t.text,
-        })),
-    ];
-
-    this.abort = new AbortController();
-    this.abortReason = undefined;
-    this.streamingAssistant = { text: "", reasoning: "" };
-    this.post({ type: "assistantStart" });
-
-    let full = "";
-    let usage: UsageInfo | undefined;
-    let tokenTimer: NodeJS.Timeout | undefined;
-
-    const resetTimer = () => {
-      if (tokenTimer) clearTimeout(tokenTimer);
-      tokenTimer = setTimeout(() => {
-        if (this.abort) {
-          this.abortReason = "LLM response timed out (no tokens received for 60 seconds).";
-          this.abort.abort();
-        }
-      }, 60000);
-    };
-
-    resetTimer();
-
+    let tokenTimer: TokenTimer | undefined;
     try {
+      const config = await loadConfig();
+      if (!config.apiKey) {
+        throw new Error("API key is missing. Please run 'Evlampy: Open Global Config' and set the API key there.");
+      }
+
+      // Read file contents right before sending
+      const resolvedAttachments = await this.resolver.resolveDrafts(drafts);
+
+      // Build user message
+      const userSystemPrompt = await loadUserSystemPrompt(config);
+      const systemMsg = buildSystemMessage(userSystemPrompt);
+      const userText = buildUserMessage(text, resolvedAttachments);
+
+      this.session.addUserTurn({ role: "user", prompt: text, rawText: userText, attachments: resolvedAttachments });
+      this.pushSessionState();
+
+      // Collect chat history
+      const messages = [
+        { role: "system", content: systemMsg } as ChatMsg,
+        ...this.session.getMessagesForLLM(),
+      ];
+
+      // Show LLM response placeholder in chat
+      const assistantTurn = this.session.startAssistantTurn();
+      this.pushSessionState();
+
+      this.userAbort = new AbortController();
+      this.timeoutAbort = new AbortController();
+
+      // Combine both signals: streaming will be aborted if either triggers
+      const combinedAbort = new AbortController();
+      const onAbort = () => combinedAbort.abort();
+      this.userAbort.signal.addEventListener("abort", onAbort);
+      this.timeoutAbort.signal.addEventListener("abort", onAbort);
+
+      tokenTimer = new TokenTimer(this.timeoutAbort);
+      tokenTimer.reset();
+
       const res = await chat({
-        config: cfg,
-        model: model || cfg.defaultModel || cfg.models[0],
+        config,
+        model,
         effort,
         messages,
-        signal: this.abort.signal,
-        onDelta: (d) => {
-          if (this.streamingAssistant) this.streamingAssistant.text += d;
-          full += d;
-          resetTimer();
-          this.post({ type: "assistantDelta", text: d });
+        signal: combinedAbort.signal,
+        onDelta: (delta) => {
+          assistantTurn.rawText += delta;
+          assistantTurn.status = "streaming";
+          tokenTimer!.reset();
+          this.pushSessionState();
         },
-        onReasoningDelta: (d) => {
-          if (this.streamingAssistant) this.streamingAssistant.reasoning += d;
-          resetTimer();
-          this.post({ type: "assistantReasoningDelta", text: d });
-        },
+        onReasoningDelta: (reasoningDelta) => {
+          assistantTurn.reasoning += reasoningDelta;
+          assistantTurn.status = "streaming";
+          tokenTimer!.reset();
+          this.pushSessionState();
+        }
       });
-      usage = res.usage;
-      full = res.text;
-    } catch (e) {
-      const err = e as Error;
-      const isAbort = err.name === "AbortError" || this.abortReason !== undefined;
 
-      if (isAbort) {
-        if (full.trim()) {
-          this.turns.push({ role: "assistant", text: full });
-          await this.saveSession();
-        }
-        if (this.abortReason === "Cancelled by user") {
-          await this.pushStatus("Generation stopped by user.");
-        } else {
-          await this.pushError(this.abortReason || "Request aborted.");
-        }
+      // Save chat to debug logs
+      await this.session.logChat(messages, res.text);
+
+      // Parse LLM response: extract text and diff operations
+      const blocks = parseChatResponse(res.text);
+      assistantTurn.blocks = blocks;
+
+      // Extract only operations to apply to the file system.
+      const suggestedChanges = blocks.flatMap(b => b.type === "op" ? [b.op] : []);
+
+      let report;
+      if (suggestedChanges.length > 0) {
+        report = await this.diffs.apply(suggestedChanges);
+      }
+
+      this.session.finishAssistantTurn(res.usage, report);
+      this.pushSessionState();
+    } catch (e) {
+      if (this.timeoutAbort?.signal.aborted) {
+        this.session.registerTimeout();
+      } else if (this.userAbort?.signal.aborted) {
+        this.session.registerUserAbort();
       } else {
-        // Roll back the user turn so a failed request doesn't poison the context.
-        this.turns.pop();
-        await this.pushError(`Request failed: ${err.message}`);
+        this.session.registerError(e as Error);
       }
-      this.streamingAssistant = undefined;
-      this.post({ type: "assistantDone" });
-      return;
+      this.pushSessionState();
     } finally {
-      if (tokenTimer) clearTimeout(tokenTimer);
-      this.abort = undefined;
-      this.abortReason = undefined;
+      tokenTimer?.clear();
+      this.userAbort = undefined;
+      this.timeoutAbort = undefined;
     }
+  }
 
+  private async handleAttach(inputPath: string): Promise<void> {
     try {
-      this.turns.push({ role: "assistant", text: full });
-      this.streamingAssistant = undefined;
-      if (usage) {
-        this.totalTokens += usage.totalTokens;
-        if (usage.cost) {
-          this.totalCost += usage.cost;
-        }
-      }
-      await this.saveSession();
-      await this.logChat(messages, full);
-
-      // Parse + apply diffs from the completed message.
-      const ops = parseDiffOps(full);
-      if (ops.length > 0) {
-        const report = await this.diffs.apply(ops);
-        this.turns[this.turns.length - 1].report = report;
-        await this.saveSession();
-        this.post({ type: "applyReport", report });
-      }
+      const drafts = await this.resolver.expandPathToDrafts(inputPath);
+      this.view?.webview.postMessage({ type: "ui:addDraftAttachments", attachments: drafts } as HostMessage);
     } catch (e) {
-      await this.pushError(`Post-processing failed: ${(e as Error).message}`);
-    } finally {
-      this.abort = undefined;
-      this.post({ type: "assistantDone", usage });
+      this.session.addSystemTurn({ role: "system", text: `Attach failed: ${(e as Error).message}`, status: "error" });
+      this.pushSessionState();
     }
   }
 
-  // ---- New chat + history ----
-
-  async newChat(): Promise<void> {
-    if (this.abort) {
-      this.abortReason = "Cancelled by user (New Chat)";
-      this.abort.abort();
-    }
-    await this.saveSession();
-    this.turns = [];
-    this.sessionId = newId();
-    this.chatTitle = undefined;
-    this.totalCost = 0;
-    this.totalTokens = 0;
-    this.pendingAttachments = [];
-    this.streamingAssistant = undefined;
-    await vscode.commands.executeCommand("evlampy.chatView.focus");
-    this.post({ type: "clearChat" });
+  private async handleSuggestions(query: string): Promise<void> {
+    const items = await this.suggestions.getSuggestions(query);
+    this.view?.webview.postMessage({ type: "ui:suggestions", query, items } as HostMessage);
   }
 
-  async showHistory(): Promise<void> {
-    const sessions = this.loadHistory();
+  private handleNewChat(): void {
+    if (this.blockIfStreaming("Cannot create a new chat while the current one is generating. Please stop it first.")) {
+      return;
+    }
+
+    this.session.reset();
+    this.pushSessionState();
+  }
+
+  // If a stream is currently running, posts an error system turn and returns true.
+  private blockIfStreaming(message: string): boolean {
+    if (this.session.state.isStreaming) {
+      this.session.addSystemTurn({ role: "system", text: message, status: "error" });
+      this.pushSessionState();
+      return true;
+    }
+    return false;
+  }
+
+  private async handleShowHistory(): Promise<void> {
+    const sessions = this.session.getHistory();
     if (sessions.length === 0) {
       vscode.window.showInformationMessage("Evlampy: no chat history yet.");
       return;
     }
+
     const pick = await vscode.window.showQuickPick(
       sessions.map((s) => ({
-        label: s.title || "(untitled)",
-        description: `${s.turns.filter((t) => t.role === "user").length} msg · ${fmtCost(s.totalCost)}`,
+        label: s.chatTitle || "(untitled)",
         detail: new Date(s.updatedAt).toLocaleString(),
         session: s,
       })),
       { placeHolder: "Restore a chat" }
     );
+
     if (pick) {
-      await this.restore(pick.session);
-    }
-  }
-
-  private async restore(s: ChatSession): Promise<void> {
-    if (this.abort) {
-      this.abortReason = "Cancelled by user (Restored history)";
-      this.abort.abort();
-    }
-    await this.saveSession(); // don't lose the current one
-    this.turns = s.turns.map((t) => ({ ...t }));
-    this.sessionId = s.id;
-    this.chatTitle = s.title;
-    this.totalCost = s.totalCost;
-    this.totalTokens = s.totalTokens;
-    this.streamingAssistant = undefined;
-    await vscode.commands.executeCommand("evlampy.chatView.focus");
-    this.post({
-      type: "loadChat",
-      turns: this.turns,
-      totalCost: this.totalCost,
-      totalTokens: this.totalTokens,
-    });
-  }
-
-  private loadHistory(): ChatSession[] {
-    return this.context.workspaceState.get<ChatSession[]>(HISTORY_KEY, []);
-  }
-
-  private async logChat(messages: ChatMsg[], responseText: string): Promise<void> {
-    const cfg = vscode.workspace.getConfiguration("evlampy");
-    if (!cfg.get<boolean>("logChats", true)) return;
-
-    try {
-      const logDir = vscode.Uri.joinPath(this.context.globalStorageUri, "logs");
-      await vscode.workspace.fs.createDirectory(logDir);
-      
-      const logFile = vscode.Uri.joinPath(logDir, `${this.sessionId}.json`);
-      
-      let existing: any[] = [];
-      try {
-        const bytes = await vscode.workspace.fs.readFile(logFile);
-        existing = JSON.parse(Buffer.from(bytes).toString("utf8"));
-      } catch {}
-      
-      existing.push({
-        timestamp: new Date().toISOString(),
-        request: messages,
-        response: responseText
-      });
-      
-      await vscode.workspace.fs.writeFile(logFile, Buffer.from(JSON.stringify(existing, null, 2), "utf8"));
-      
-      // Fire and forget cleanup
-      this.cleanupOldLogs(logDir).catch(() => {});
-    } catch (e) {
-      console.error("Evlampy: Failed to log chat", e);
-    }
-  }
-
-  private async cleanupOldLogs(logDir: vscode.Uri): Promise<void> {
-    try {
-      const entries = await vscode.workspace.fs.readDirectory(logDir);
-      const now = Date.now();
-      const SEVEN_DAYS_MS = 30 * 67 * 67 * 67 * 67;
-      
-      for (const [name, type] of entries) {
-        if (type === vscode.FileType.File && name.endsWith(".json")) {
-          const fileUri = vscode.Uri.joinPath(logDir, name);
-          const stat = await vscode.workspace.fs.stat(fileUri);
-          if (now - stat.mtime > SEVEN_DAYS_MS) {
-            await vscode.workspace.fs.delete(fileUri);
-          }
-        }
+      if (this.blockIfStreaming("Cannot restore chat while the current one is generating. Please stop it first.")) {
+        return;
       }
-    } catch {
-      // Ignore cleanup errors
+
+      this.session.loadFromHistory(pick.session);
+      this.pushSessionState();
     }
   }
-
-  /** Upsert the current session into history (most-recent first, capped). */
-  private async saveSession(): Promise<void> {
-    if (!this.chatTitle) {
-      return;
-    }
-    try {
-      const session: ChatSession = {
-        id: this.sessionId,
-        title: this.chatTitle,
-        turns: this.turns.map((t) => ({ ...t })),
-        totalCost: this.totalCost,
-        totalTokens: this.totalTokens,
-        updatedAt: Date.now(),
-      };
-      const list = this.loadHistory().filter((s) => s.id !== session.id);
-      list.unshift(session);
-      await this.context.workspaceState.update(
-        HISTORY_KEY,
-        list.slice(0, HISTORY_LIMIT)
-      );
-    } catch (e) {
-      console.error("Evlampy: Failed to save chat history", e);
-    }
-  }
-
-
-  private async attachPaths(inputs: string[]): Promise<void> {
-    const uniqueInputs = Array.from(
-      new Set(inputs.map((s) => s.trim()).filter(Boolean))
-    );
-
-    if (uniqueInputs.length === 0) {
-      return;
-    }
-
-    let attachedFiles = 0;
-    const failed: string[] = [];
-
-    for (const input of uniqueInputs) {
-      try {
-        attachedFiles += await this.attachSingleInput(input);
-      } catch (e) {
-        failed.push(`${input}: ${(e as Error).message}`);
-      }
-    }
-
-    if (attachedFiles > 1 || uniqueInputs.length > 1) {
-      await this.pushStatus(`Attached ${attachedFiles} file(s) from ${uniqueInputs.length} item(s).`);
-    }
-
-    if (failed.length > 0) {
-      await this.pushError(`Some paths could not be attached: ${failed.join(" | ")}`);
-    }
-  }
-
-  private async attachSingleInput(input: string): Promise<number> {
-    const target = this.resolveAttachmentTarget(input);
-    const stat = await vscode.workspace.fs.stat(target);
-
-    if (stat.type & vscode.FileType.Directory) {
-      const files = await this.collectFilesRecursive(target, MAX_ATTACH_FILES_PER_FOLDER + 1);
-
-      if (files.length > MAX_ATTACH_FILES_PER_FOLDER) {
-        throw new Error(
-          `Folder "${this.displayPath(target)}" contains more than ${MAX_ATTACH_FILES_PER_FOLDER} files recursively. Attach a smaller folder or specific files instead.`
-        );
-      }
-      for (const file of files) {
-        const attachment = await this.readAttachment(file);
-        this.queueAttachment(attachment);
-      }
-      return files.length;
-    }
-
-    if (stat.type & vscode.FileType.File) {
-      const attachment = await this.readAttachment(target);
-      this.queueAttachment(attachment);
-      return 1;
-    }
-
-    throw new Error("Only files and folders can be attached.");
-  }
-
-  private queueAttachment(attachment: Attachment): void {
-    const isDup = this.pendingAttachments.some((a) => sameAttachment(a, attachment));
-    if (isDup) return;
-    this.pendingAttachments.push(attachment);
-    this.post({ type: "addAttachment", attachment });
-  }
-
-  private resolveAttachmentTarget(input: string): vscode.Uri {
-    const trimmed = input.trim();
-    if (!trimmed) {
-      throw new Error("Empty path.");
-    }
-
-    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
-      const uri = vscode.Uri.parse(trimmed);
-      if (uri.scheme !== "file") {
-        throw new Error(`Unsupported URI scheme: ${uri.scheme}`);
-      }
-      return uri;
-    }
-
-    const normalizedInput = stripTrailingSeparators(trimmed);
-    if (path.isAbsolute(normalizedInput)) {
-      return vscode.Uri.file(normalizedInput);
-    }
-
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!root) {
-      throw new Error("No workspace is open.");
-    }
-
-    return vscode.Uri.file(path.join(root, normalizedInput));
-  }
-
-  private async collectFilesRecursive(
-    dir: vscode.Uri,
-    limit = Number.POSITIVE_INFINITY
-  ): Promise<vscode.Uri[]> {
-    const out: vscode.Uri[] = [];
-
-    const walk = async (current: vscode.Uri): Promise<void> => {
-      const entries = await vscode.workspace.fs.readDirectory(current);
-      entries.sort(([a], [b]) => a.localeCompare(b));
-
-      for (const [name, type] of entries) {
-        if (out.length >= limit) {
-          return;
-        }
-
-        const child = vscode.Uri.joinPath(current, name);
-        if (type & vscode.FileType.Directory) {
-          await walk(child);
-          continue;
-        }
-        if (type & vscode.FileType.File) {
-          out.push(child);
-          if (out.length >= limit) {
-            return;
-          }
-        }
-      }
-    };
-
-    await walk(dir);
-    return out;
-  }
-
-  private async readAttachment(uri: vscode.Uri): Promise<Attachment> {
-    const openDoc = vscode.workspace.textDocuments.find(
-      (doc) =>
-        doc.uri.scheme === uri.scheme &&
-        path.normalize(doc.uri.fsPath) === path.normalize(uri.fsPath)
-    );
-
-    const content = openDoc
-      ? openDoc.getText()
-      : Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
-
-    return {
-      path: this.displayPath(uri),
-      content,
-    };
-  }
-
-  private displayPath(uri: vscode.Uri): string {
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const fsPath = uri.fsPath;
-
-    if (root) {
-      const rel = path.relative(root, fsPath);
-      if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) {
-        return rel.replace(/\\/g, "/");
-      }
-    }
-
-    return fsPath.replace(/\\/g, "/");
-  }
-
-  private _suggestionId = 0;
-
-  private async sendFileSuggestions(query: string): Promise<void> {
-    const reqId = ++this._suggestionId;
-    if (!query) {
-      this.post({ type: "fileSuggestions", query, items: [] });
-      return;
-    }
-
-    const parts = query.split(/[\\/]+/).filter(Boolean);
-    const include = "**/" + parts.join("*/**/*") + "*";
-    const excludePattern = `**/{${SEARCH_EXCLUDE_DIRS.join(",")}}/**`;
-
-    try {
-      const found = await vscode.workspace.findFiles(include, excludePattern, 10);
-      if (this._suggestionId !== reqId) return;
-
-      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
-      const items = found
-        .map((u) => path.relative(root, u.fsPath).replace(/\\/g, "/"))
-        .sort((a, b) => a.length - b.length)
-
-      this.post({ type: "fileSuggestions", query, items });
-    } catch {}
-  }
-
-  private resetConfigWatcher(): void {
-    this.configWatcher?.dispose();
-    this.configWatcher = undefined;
-
-    const file = configFilePath();
-    if (!file) {
-      return;
-    }
-
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const normalizedFile = path.normalize(file);
-    let pattern: vscode.GlobPattern = normalizedFile.replace(/\\/g, "/");
-
-    if (root) {
-      const normalizedRoot = path.normalize(root);
-      const rel = path.relative(normalizedRoot, normalizedFile);
-      if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) {
-        pattern = new vscode.RelativePattern(root, rel.replace(/\\/g, "/"));
-      }
-    }
-
-    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-    const onChange = () => this.scheduleConfigRefresh();
-    watcher.onDidChange(onChange);
-    watcher.onDidCreate(onChange);
-    watcher.onDidDelete(onChange);
-    this.configWatcher = watcher;
-  }
-
-  private scheduleConfigRefresh(): void {
-    if (this.configRefreshTimer) {
-      clearTimeout(this.configRefreshTimer);
-    }
-    this.configRefreshTimer = setTimeout(() => {
-      void this.sendInit();
-    }, 150);
-  }
-
-  private isConfigFile(uri: vscode.Uri): boolean {
-    try {
-      const file = configFilePath();
-      if (!file) return false;
-      return path.normalize(uri.fsPath) === path.normalize(file);
-    } catch {
-      return false;
-    }
-  }
-
-  private html(webview: vscode.Webview): string {
-    const nonce = getNonce();
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, "media", "main.js")
-    );
-    const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, "media", "style.css")
-    );
-    const iconUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.context.extensionUri, "media", "images", "icon.png")
-    );
-    const csp = [
-      `default-src 'none'`,
-      `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `script-src 'nonce-${nonce}'`,
-      `font-src ${webview.cspSource}`,
-      `img-src ${webview.cspSource} https: data:`,
-    ].join("; ");
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="${csp}" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link href="${styleUri}" rel="stylesheet" />
-  <title>Evlampy</title>
-</head>
-<body>
-  <div id="welcome">
-    <img src="${iconUri}" alt="Evlampy" class="welcome-icon" />
-    <div class="welcome-title">Evlampy</div>
-    <div class="welcome-tagline">One request, one response. No agentic loop.</div>
-    <div class="welcome-text">
-      <ul class="welcome-list">
-        <li>Run <code>Evlampy: Open Global Config</code> to set your API key and other settings</li>
-        <li>Run <code>Evlampy: Override config for project</code> to override defaults</li>
-        <li>Define global rules in <code>AGENTS.md</code></li>
-      </ul>
-    </div>
-  </div>
-  <div id="messages"></div>
-  <div id="attachmentBar">
-    <div id="attachments"></div>
-  </div>
-  <div id="suggestions" class="hidden"></div>
-  <div id="composer">
-    <textarea id="input" rows="3" placeholder="Ask…  (@ to attach a file / entire folder, ⌘/Ctrl+I to add the open file/selection)"></textarea>
-    <div id="controls">
-      <div class="selectors">
-        <select id="model" title="Model"></select>
-        <select id="effort" title="Effort"></select>
-      </div>
-      <span id="cost" class="cost"></span>
-      <button id="send" title="Send (Enter)">
-        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="22" y1="2" x2="11" y2="13"></line>
-          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-        </svg>
-      </button>
-    </div>
-  </div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
-  }
-}
-
-function fmtCost(c: number): string {
-  return "$" + (c < 0.01 ? c.toFixed(5) : c.toFixed(4));
-}
-
-function newId(): string {
-  return crypto.randomUUID();
-}
-
-function getNonce(): string {
-  return crypto.randomBytes(16).toString("hex");
-}
-
-function sameAttachment(a: Attachment, b: Attachment): boolean {
-  return (
-    a.path === b.path &&
-    a.range?.startLine === b.range?.startLine &&
-    a.range?.endLine === b.range?.endLine
-  );
-}
-
-function stripTrailingSeparators(input: string): string {
-  return input.length > 1 ? input.replace(/[\\/]+$/g, "") : input;
 }

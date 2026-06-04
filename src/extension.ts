@@ -3,7 +3,7 @@ import * as path from "path";
 import { ChatViewProvider } from "./chatViewProvider";
 import { DiffManager } from "./applier";
 import { overrideConfigForProject, loadConfig } from "./config";
-import { Attachment } from "./types";
+import { DraftAttachment } from "./types";
 
 export function activate(context: vscode.ExtensionContext): void {
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
@@ -46,9 +46,11 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("evlampy.acceptAll", () => diffs.acceptAll()),
     vscode.commands.registerCommand("evlampy.rejectAll", () => diffs.rejectAll()),
-    vscode.commands.registerCommand("evlampy.newChat", () => provider.newChat()),
+    vscode.commands.registerCommand("evlampy.newChat", () => 
+      provider["onIntent"]({ type: "intent:newChat" })
+    ),
     vscode.commands.registerCommand("evlampy.chatHistory", () =>
-      provider.showHistory()
+      provider["onIntent"]({ type: "intent:showHistory" })
     ),
     vscode.commands.registerCommand("evlampy.openConfig", () => {
       vscode.commands.executeCommand("workbench.action.openSettings", "evlampy");
@@ -94,18 +96,19 @@ async function addToChat(
     : doc.uri.fsPath;
 
   const sel = editor.selection;
-  let attachment: Attachment;
+  let attachment: DraftAttachment;
   if (!sel.isEmpty) {
     const text = doc.getText(sel);
     attachment = {
+      type: "selection",
       path: rel,
       range: { startLine: sel.start.line + 1, endLine: sel.end.line + 1 },
       content: text,
     };
   } else {
-    attachment = { path: rel, content: doc.getText() };
+    attachment = { type: "file", path: rel };
   }
-  await provider.addAttachment(attachment);
+  await provider.addDraftAttachments([attachment]);
 }
 
 export function deactivate(): void {

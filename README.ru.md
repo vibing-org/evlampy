@@ -55,7 +55,6 @@ Evlampy использует глобальные настройки VS Code. Ч
 - `baseURL`: адрес API.
 - `apiKey`: ваш ключ доступа (поддерживает `${env:VAR}`).
 - `models`: массив с названиями моделей, как у провайдера.
-- `defaultModel`: модель по умолчанию.
 - `serviceTier`: укажите `"flex"` для экономии [у некоторых провайдеров](https://openrouter.ai/docs/guides/features/service-tiers).
 
 ## Демо

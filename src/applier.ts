@@ -22,7 +22,7 @@ interface ReviewItem {
   original: string | null;
   /** True if the op deleted the file (already removed from disk). */
   deleted: boolean;
-  /** Virtual URI holding the original content for the diff's left side. */
+  /** Virtual URI holding the original content for the left side of the diff. */
   origUri: vscode.Uri;
   status: ReviewStatus;
   detail: string;
@@ -31,7 +31,7 @@ interface ReviewItem {
 /**
  * Applies diff ops (leaving documents dirty) and drives a linear, per-file
  * review: one diff at a time, accept (save) or reject (revert) each file, then
- * auto-advance to the next pending file. No global accept/reject.
+ * automatically advances to the next pending file. No global accept/reject.
  */
 export class DiffManager implements vscode.TextDocumentContentProvider {
   private items: ReviewItem[] = [];
@@ -328,7 +328,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
 
   private async openDiff(item: ReviewItem): Promise<void> {
     if (item.deleted) {
-      // No right-hand document to diff against; show the original being removed.
+      // No right-hand document to diff against; show the original being removed
       const doc = await vscode.workspace.openTextDocument(item.origUri);
       await vscode.window.showTextDocument(doc, { preview: false });
       return;
@@ -392,7 +392,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
       return this.items.find((i) => i.uri.toString() === input.modified.toString())?.rel;
     }
     if (input instanceof vscode.TabInputText && input.uri.scheme === ORIG_SCHEME) {
-      // A deleted-file preview is open.
+      // A deleted-file preview is open
       return this.items.find((i) => i.origUri.toString() === input.uri.toString())?.rel;
     }
     return undefined;
@@ -425,7 +425,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     await this.advanceFrom(item);
   }
 
-  /** Re-open the diff for a file (e.g. clicked in the panel list). */
+  /** Re-open the diff for a file (e.g., clicked in the panel list). */
   async showFile(rel: string): Promise<void> {
     const item = this.items.find((i) => i.rel === rel);
     if (item) {
@@ -434,7 +434,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     }
   }
 
-  /** Accept every still-pending file at once. */
+  /** Accept all still-pending files at once. */
   async acceptAll(): Promise<void> {
     for (const item of this.items.filter((i) => i.status === "pending")) {
       if (!item.deleted) {
@@ -450,7 +450,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     this._onReviewChange.fire({ kind: "done" });
   }
 
-  /** Reject (revert) every still-pending file at once. */
+  /** Reject (revert) all still-pending files at once. */
   async rejectAll(): Promise<void> {
     for (const item of this.items.filter((i) => i.status === "pending")) {
       await this.revert(item);

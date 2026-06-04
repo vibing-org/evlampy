@@ -55,7 +55,6 @@ This creates a local `.evlampy/config.json` file.
 - `baseURL`: API address.
 - `apiKey`: your access key (supports `${env:VAR}`).
 - `models`: array of model names, exactly as provided by the API.
-- `defaultModel`: the model selected by default.
 - `serviceTier`: use `"flex"` to save money [with some providers](https://openrouter.ai/docs/guides/features/service-tiers).
 
 ## Demo

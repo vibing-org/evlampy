@@ -39,7 +39,6 @@ export async function loadConfig(): Promise<EvlampyConfig> {
     baseURL: vsConfig.get<string>("baseURL"),
     apiKey: vsConfig.get<string>("apiKey"),
     models: vsConfig.get<string[]>("models"),
-    defaultModel: vsConfig.get<string>("defaultModel"),
     serviceTier: vsConfig.get<string>("serviceTier"),
   };
 
@@ -67,7 +66,6 @@ export async function loadConfig(): Promise<EvlampyConfig> {
     baseURL: config.baseURL?.trim() ?? "",
     apiKey,
     models,
-    defaultModel: config.defaultModel || models[0] || "",
     serviceTier: config.serviceTier,
   };
 }
@@ -97,7 +95,6 @@ const SAMPLE_CONFIG = `{
   // "baseURL": "https://openrouter.ai/api/v1",
   // "apiKey": "\${env:EVLAMPY_API_KEY}",
   // "models": ["openai/gpt-5.5"],
-  // "defaultModel": "openai/gpt-5.5",
   // "serviceTier": "flex"
 }
 `;

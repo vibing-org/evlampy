@@ -1,7 +1,15 @@
 // Standalone sanity tests for parser + matcher (no vscode needed).
 // Run: npm run test:core
-import { parseDiffOps } from "../src/parser";
+import { parseChatResponse } from "../src/parser";
 import { findMatch } from "../src/matcher";
+import { ContentBlock, DiffOp } from "../src/types";
+
+/** Helper: extract DiffOps from parsed ContentBlocks. */
+function extractOps(blocks: ContentBlock[]): DiffOp[] {
+  return blocks
+    .filter((b): b is Extract<ContentBlock, { type: "op" }> => b.type === "op")
+    .map((b) => b.op);
+}
 
 let failed = 0;
 function check(name: string, cond: boolean, extra?: unknown) {
@@ -26,7 +34,7 @@ function check(name: string, cond: boolean, extra?: unknown) {
     "</evlampy:edit>",
     "Done.",
   ].join("\n");
-  const ops = parseDiffOps(resp);
+  const ops = extractOps(parseChatResponse(resp));
   check("one edit op parsed", ops.length === 1, ops);
   if (ops[0]?.kind === "edit") {
     check("hunk search", ops[0].hunks[0].search === "  val x = 1");
@@ -54,7 +62,7 @@ function check(name: string, cond: boolean, extra?: unknown) {
     ">>>>>>> REPLACE",
     "</evlampy:edit>",
   ].join("\n");
-  const ops = parseDiffOps(resp);
+  const ops = extractOps(parseChatResponse(resp));
   check("ignores plain fence; one edit", ops.length === 1, ops);
   if (ops[0]?.kind === "edit") {
     check("two hunks", ops[0].hunks.length === 2, ops[0].hunks);
@@ -80,7 +88,7 @@ function check(name: string, cond: boolean, extra?: unknown) {
     "</evlampy:edit>",
     "Done.",
   ].join("\n");
-  const ops = parseDiffOps(resp);
+  const ops = extractOps(parseChatResponse(resp));
   check("3-tick edit with inner fences: one op", ops.length === 1, ops);
   if (ops[0]?.kind === "edit") {
     check("inner ``` kept in search", ops[0].hunks[0].search === "Example:\n```bash\nold --flag\n```", JSON.stringify(ops[0].hunks[0].search));
@@ -108,7 +116,7 @@ function check(name: string, cond: boolean, extra?: unknown) {
     ">>>>>>> REPLACE",
     "</evlampy:edit>",
   ].join("\n");
-  const ops = parseDiffOps(resp);
+  const ops = extractOps(parseChatResponse(resp));
   check("two hunks despite inner fences", ops[0]?.kind === "edit" && ops[0].hunks.length === 2, ops);
 }
 
@@ -124,7 +132,7 @@ function check(name: string, cond: boolean, extra?: unknown) {
     "<evlampy:delete path=\"src/Gone.ts\">",
     "</evlampy:delete>",
   ].join("\n");
-  const ops = parseDiffOps(resp);
+  const ops = extractOps(parseChatResponse(resp));
   check("three ops", ops.length === 3, ops.map((o) => o.kind));
   check("new content", ops[0].kind === "new" && ops[0].content === "export const x = 1;");
   check("delete kind", ops[2].kind === "delete");
@@ -177,7 +185,7 @@ function check(name: string, cond: boolean, extra?: unknown) {
 // ---- end-to-end: apply a hunk via offsets ----
 {
   const file = "header\nold body line\nfooter\n";
-  const ops = parseDiffOps(
+  const ops = extractOps(parseChatResponse(
     [
       "<evlampy:edit path=\"f.txt\">",
       "<<<<<<< SEARCH",
@@ -187,7 +195,7 @@ function check(name: string, cond: boolean, extra?: unknown) {
       ">>>>>>> REPLACE",
       "</evlampy:edit>",
     ].join("\n")
-  );
+  ));
   if (ops[0]?.kind === "edit") {
     const r = findMatch(file, ops[0].hunks[0].search);
     if (r.ok) {

@@ -182,6 +182,8 @@ body { display: flex; flex-direction: column; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 
+.user-attachments { margin-bottom: 12px; }
+
 .msg p, .msg ul, .msg ol, .msg pre, .msg blockquote, .msg hr { margin: 0.5em 0; }
 .msg h1, .msg h2, .msg h3, .msg h4, .msg h5, .msg h6 { margin: 1em 0 0.5em; font-weight: 600; }
 .msg ul, .msg ol { padding-left: 1.5em; }
@@ -341,10 +343,33 @@ body { display: flex; flex-direction: column; }
   background: var(--vscode-editorWidget-background); margin-top: 12px;
 }
 .suggestion-summary, .suggestion > summary {
+  display: flex;
+  align-items: center;
   font-family: var(--vscode-editor-font-family, monospace);
   background: var(--vscode-editorWidget-background);
   padding: 8px 12px; border-bottom: 1px solid transparent;
 }
+.suggestion-filepath {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.suggestion-badge {
+  flex: 0 0 auto;
+  font-size: 0.8em;
+  font-family: var(--vscode-font-family);
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  margin-left: 8px;
+}
+.suggestion-badge.read { background: var(--vscode-editorInfo-background, rgba(55, 148, 255, 0.2)); color: var(--vscode-editorInfo-foreground, #3794ff); }
+.suggestion-badge.edit { background: var(--vscode-editorWarning-background, rgba(204, 167, 0, 0.2)); color: var(--vscode-editorWarning-foreground, #cca700); }
+.suggestion-badge.new { background: var(--vscode-editorSuccess-background, rgba(81, 156, 80, 0.2)); color: var(--vscode-testing-iconPassed, #519c50); }
+.suggestion-badge.rewrite { background: var(--vscode-editorWarning-background, rgba(204, 167, 0, 0.2)); color: var(--vscode-editorWarning-foreground, #cca700); }
+.suggestion-badge.delete { background: var(--vscode-editorError-background, rgba(241, 76, 76, 0.2)); color: var(--vscode-errorForeground, #f14c4c); }
 .suggestion[open] > summary, .suggestion-summary { border-bottom-color: var(--border); }
 .suggestion-body { padding: 12px; }
 .suggestion pre { margin: 0; border: none; border-radius: 4px; }

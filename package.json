@@ -2,7 +2,7 @@
   "name": "evlampy",
   "displayName": "Evlampy",
   "description": "Ultra-frugal LLM shell for VS Code. No agentic loop. One request, one response.",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "publisher": "vibing-org",
   "license": "MIT",
   "icon": "media/images/icon.png",
@@ -161,11 +161,6 @@
             "qwen/qwen3-coder-flash"
           ],
           "description": "List of models available in the chat."
-        },
-        "evlampy.defaultModel": {
-          "type": "string",
-          "default": "qwen/qwen3.7-max",
-          "description": "Default model to select."
         },
         "evlampy.serviceTier": {
           "type": "string",

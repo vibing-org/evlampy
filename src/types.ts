@@ -9,19 +9,19 @@ export interface EvlampyConfig {
   apiKey: string;
   /** Models offered in the model picker (OpenRouter slugs, e.g. "qwen/qwen3-max"). */
   models: string[];
-  /** Which of `models` is selected by default. Falls back to models[0]. */
-  defaultModel?: string;
   /** Service tier: "flex" (~50% discount on some models, e.g. OpenAI), "priority" or not stated (let AI provider use default). */
   serviceTier?: string;
 }
 
-/** An attachment chip in the chat: a whole file or a selected range of one. */
-export interface Attachment {
-  /** Workspace-relative path. */
+/** What is stored in the UI before pressing the Send button. File content is read lazily. */
+export type DraftAttachment =
+  | { type: "file"; path: string }
+  | { type: "selection"; path: string; range: { startLine: number; endLine: number }; content: string };
+
+/** Fully resolved file with content. Formed at the moment of Send for history and LLM. */
+export interface ResolvedAttachment {
   path: string;
-  /** 1-based inclusive line range, if a selection. Absent => whole file. */
   range?: { startLine: number; endLine: number };
-  /** The actual text content captured at attach time. */
   content: string;
 }
 
@@ -41,17 +41,7 @@ export interface ChatMsg {
   content: string;
 }
 
-/** A saved chat session (history). */
-export interface ChatSession {
-  id: string;
-  title: string;
-  turns: DisplayTurn[];
-  totalCost: number;
-  totalTokens: number;
-  updatedAt: number;
-}
-
-/** A turn as shown in the panel (no file bodies). */
+/** A turn as displayed in the panel (no file bodies). */
 export interface DisplayTurn {
   role: "user" | "assistant" | "system" | "error";
   text: string;
@@ -81,39 +71,82 @@ export interface ReviewFile {
   detail: string;
 }
 
-// ---- Messages: webview <-> extension ----
+// ---- Global State Model (Single Source of Truth) ----
 
-export type ToWebview =
-  | { type: "init"; models: string[]; defaultModel: string }
-  | { type: "addAttachment"; attachment: Attachment }
-  | { type: "userMessage"; text: string }
-  | { type: "assistantStart" }
-  | { type: "assistantDelta"; text: string }
-  | { type: "assistantReasoningDelta"; text: string }
-  | { type: "assistantDone"; usage?: UsageInfo }
-  | { type: "fileSuggestions"; query: string; items: string[] }
-  | { type: "applyReport"; report: ApplyReport }
-  | { type: "clearChat" }
-  | { type: "loadChat"; turns: DisplayTurn[]; totalCost: number; totalTokens: number }
-  | { type: "status"; text: string }
-  | { type: "error"; message: string };
+export interface TurnId {
+  /** Unique ID for granular DOM patching without re-rendering the entire list */
+  id: string;
+}
 
-export type FromWebview =
-  | { type: "ready"; transcript?: DisplayTurn[]; totalCost?: number; totalTokens?: number }
-  | {
-      type: "send";
-      text: string;
-      attachments: Attachment[];
-      model: string;
-      effort: EffortLevel;
-    }
-  | { type: "requestFileSuggestions"; query: string }
-  | { type: "attachByPath"; path: string }
-  | { type: "attachPaths"; paths: string[] }
-  | { type: "openConfig" }
-  | { type: "removeAttachment"; index: number }
-  | { type: "clearAttachments" }
-  | { type: "cancel" };
+export interface UserTurn extends TurnId {
+  role: "user";
+  /** Plain text of the user's request (without attachments) for display in the UI */
+  prompt: string;
+  /** Full text sent to the LLM (including attachment contents) */
+  rawText: string;
+  attachments: ResolvedAttachment[];
+}
+
+export type ContentBlock =
+  | { type: "text"; content: string }
+  | { type: "op"; op: DiffOp; opIndex: number };
+
+export interface AssistantTurn extends TurnId {
+  role: "assistant";
+  /** Raw text that is populated during streaming */
+  rawText: string;
+  /** Raw reasoning text */
+  reasoning: string;
+  status: "waiting" | "streaming" | "done" | "error";
+  usage?: UsageInfo;
+  /** Typed response blocks (text interspersed with code suggestions). Formed by the parser. */
+  blocks?: ContentBlock[];
+  /** Result of applying suggestions to the file system. */
+  report?: ApplyReport;
+}
+
+export interface SystemTurn extends TurnId {
+  role: "system";
+  text: string;
+  status: "info" | "error";
+}
+
+export type Turn = UserTurn | AssistantTurn | SystemTurn;
+
+export interface GlobalState {
+  sessionId: string;
+  chatTitle?: string;
+  turns: Turn[];
+  totalCost: number;
+  totalTokens: number;
+  availableModels: string[];
+  selectedModel: string;
+  selectedEffort: EffortLevel;
+  /** Whether the model is currently generating a response */
+  isStreaming: boolean;
+  updatedAt: number;
+}
+
+// ---- Intents (Webview -> Host) ----
+
+export type WebviewIntent =
+  | { type: "intent:ready" }
+  | { type: "intent:send"; text: string; model: string; effort: EffortLevel; attachments: DraftAttachment[] }
+  | { type: "intent:cancel" }
+  | { type: "intent:requestSuggestions"; query: string }
+  | { type: "intent:attachPath"; path: string }
+  | { type: "intent:openConfig" }
+  | { type: "intent:newChat" }
+  | { type: "intent:showHistory" }
+  | { type: "intent:selectModel"; model: string }
+  | { type: "intent:selectEffort"; effort: EffortLevel };
+
+// ---- Host Messages (Host -> Webview) ----
+
+export type HostMessage =
+  | { type: "state:update"; state: GlobalState }
+  | { type: "ui:suggestions"; query: string; items: string[] }
+  | { type: "ui:addDraftAttachments"; attachments: DraftAttachment[] };
 
 export interface ApplyFailure {
   hunkIndex?: number;
