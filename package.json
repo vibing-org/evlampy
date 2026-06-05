@@ -2,7 +2,7 @@
   "name": "evlampy",
   "displayName": "Evlampy",
   "description": "Ultra-frugal LLM shell for VS Code. No agentic loop. One request, one response.",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "publisher": "vibing-org",
   "license": "MIT",
   "icon": "media/images/icon.png",
