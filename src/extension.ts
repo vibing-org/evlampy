@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { ChatViewProvider } from "./chatViewProvider";
-import { DiffManager } from "./applier";
+import { DiffManager } from "./DiffManager";
 import { overrideConfigForProject, loadConfig } from "./config";
 import { DraftAttachment } from "./types";
 

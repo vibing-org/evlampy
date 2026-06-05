@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { DiffManager } from "./applier";
+import { DiffManager } from "./DiffManager";
 import { loadConfig, loadUserSystemPrompt } from "./config";
 import { buildSystemMessage, buildUserMessage } from "./prompt";
 import { parseChatResponse } from "./parser";
