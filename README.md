@@ -60,3 +60,13 @@ This creates a local `.evlampy/config.json` file.
 ## Demo
 
 ![Webp Demo](https://raw.githubusercontent.com/vibing-org/evlampy/main/docs/content/full-demo.webp)
+
+## Development
+
+- Setup & Debug: Run `npm install`, then press `F5` in VS Code to build and launch the extension host (in a new window).
+- Tests: Run `npm run test:core`.
+- Package & Install locally:
+  ```bash
+  npx @vscode/vsce package
+  code --install-extension evlampy-<version>.vsix
+  ```
