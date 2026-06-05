@@ -26,6 +26,11 @@ export class ConfigWatcher {
         if (this.isConfigFile(doc.uri)) {
           this.scheduleRefresh();
         }
+      }),
+      // Re-init watcher and refresh if workspace folders change (e.g. late initialization)
+      vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        this.resetWatcher();
+        this.scheduleRefresh();
       })
     );
     this.resetWatcher();

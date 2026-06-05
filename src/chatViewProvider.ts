@@ -37,7 +37,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     this.configWatcher = new ConfigWatcher((config) => {
       this.session.state.availableModels = config.models;
-      if (!this.session.state.selectedModel && !config.models) {
+      if (!this.session.state.selectedModel && config.models.length > 0) {
         // If not selected and not in history, use the value from config.
         // Later this field is controlled by intents from the frontend.
         this.session.state.selectedModel = config.models[0];
