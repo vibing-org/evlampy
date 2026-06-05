@@ -5,6 +5,8 @@ import { DiffOp, Hunk, ContentBlock } from "./types";
  * Single-pass parsing ensures we don't lose text between tags and avoids redundant regex matching.
  */
 export function parseChatResponse(text: string): ContentBlock[] {
+  text = stripEvlampyTagFences(text);
+
   const blocks: ContentBlock[] = [];
   let opIndex = 0;
 
@@ -62,6 +64,12 @@ export function parseChatResponse(text: string): ContentBlock[] {
   }
 
   return blocks;
+}
+
+function stripEvlampyTagFences(text: string): string {
+  return text
+    .replace(/```[A-Za-z0-9_-]*\s*(?=<evlampy:(?:edit|new|rewrite|delete)\b)/g, "")
+    .replace(/(<\/evlampy:(?:edit|new|rewrite|delete)>)\s*```/g, "$1");
 }
 
 const SEARCH_RE = /^<{5,}\s*SEARCH\s*$/;
