@@ -65,8 +65,5 @@ This creates a local `.evlampy/config.json` file.
 
 - Setup & Debug: Run `npm install`, then press `F5` in VS Code to build and launch the extension host (in a new window).
 - Tests: Run `npm run test:core`.
-- Package & Install locally:
-  ```bash
-  npx @vscode/vsce package
-  code --install-extension evlampy-<version>.vsix
-  ```
+- Package: `npx @vscode/vsce package`
+- Install locally: `code --install-extension evlampy-<version>.vsix`

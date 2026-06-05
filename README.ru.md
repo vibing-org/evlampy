@@ -65,8 +65,5 @@ Evlampy использует глобальные настройки VS Code. Ч
 
 - Настройка и отладка: Выполните `npm install`, затем нажмите `F5` в VS Code, чтобы собрать и запустить хост расширения (в новом окне).
 - Тесты: Выполните `npm run test:core`.
-- Сборка пакета и локальная установка:
-  ```bash
-  npx @vscode/vsce package
-  code --install-extension evlampy-<version>.vsix
-  ```
+- Сборка пакета: `npx @vscode/vsce package`
+- Локальная установка: `code --install-extension evlampy-<version>.vsix`
