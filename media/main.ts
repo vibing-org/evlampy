@@ -1,5 +1,5 @@
 import { DOMRenderer } from "./DOMRenderer";
-import { Composer } from "./Composer";
+import { Composer, vscode } from "./Composer";
 import { AutoScroller } from "./AutoScroller";
 
 /**
@@ -31,8 +31,4 @@ window.addEventListener("message", (ev: MessageEvent) => {
 });
 
 // Notify the backend that the UI is ready to receive state
-declare function acquireVsCodeApi(): {
-  postMessage(msg: unknown): void
-};
-
-acquireVsCodeApi().postMessage({ type: "intent:ready" });
+vscode.postMessage({ type: "intent:ready" });

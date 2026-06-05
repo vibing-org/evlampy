@@ -1,7 +1,7 @@
 import { DraftAttachment, GlobalState, EffortLevel } from "./types";
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
-const vscode = acquireVsCodeApi();
+export const vscode = acquireVsCodeApi();
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -79,14 +79,25 @@ export class Composer {
     }
 
     // Update the list of available models
-    if (this.modelEl.options.length === 0 || this.modelEl.options.length !== state.availableModels.length) {
+    const currentModels = Array.from(this.modelEl.options).map(o => o.value).join(",");
+    const newModels = state.availableModels.join(",");
+    
+    if (currentModels !== newModels) {
       this.modelEl.innerHTML = "";
-      state.availableModels.forEach((mod) => {
+      if (state.availableModels.length === 0) {
         const o = document.createElement("option");
-        o.value = mod;
-        o.textContent = mod;
+        o.value = "";
+        o.textContent = "No models";
+        o.disabled = true;
         this.modelEl.appendChild(o);
-      });
+      } else {
+        state.availableModels.forEach((mod) => {
+          const o = document.createElement("option");
+          o.value = mod;
+          o.textContent = mod;
+          this.modelEl.appendChild(o);
+        });
+      }
     }
 
     // Update the selected model
@@ -95,20 +106,8 @@ export class Composer {
     }
     this.updateModelDisplay();
 
-    // Create effort options if the list is currently empty
-    if (this.effortEl.options.length === 0) {
-      const efforts: EffortLevel[] = ["none", "low", "medium", "high", "xhigh", "max"];
-      efforts.forEach((effort) => {
-        const o = document.createElement("option");
-        o.value = effort;
-        o.textContent = effort;
-        this.effortEl.appendChild(o);
-      });
-      this.effortEl.title = "Effort";
-    }
-
     // Update the selected effort
-    if (state.selectedEffort) {
+    if (state.selectedEffort && this.effortEl.value !== state.selectedEffort) {
       this.effortEl.value = state.selectedEffort;
     }
 

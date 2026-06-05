@@ -56,8 +56,17 @@ export class WebviewHtmlProvider {
     <textarea id="input" rows="3" placeholder="Ask…  (@ to attach a file / entire folder, ⌘/Ctrl+I to add the open file/selection)"></textarea>
     <div id="controls">
       <div class="selectors">
-        <select id="model" title="Model"></select>
-        <select id="effort" title="Effort"></select>
+        <select id="model" title="Model">
+          <option value="" disabled selected>Loading...</option>
+        </select>
+        <select id="effort" title="Effort">
+          <option value="none">none</option>
+          <option value="low">low</option>
+          <option value="medium" selected>medium</option>
+          <option value="high">high</option>
+          <option value="xhigh">xhigh</option>
+          <option value="max">max</option>
+        </select>
       </div>
       <span id="cost" class="cost"></span>
       <button id="send" title="Send (Enter)">
