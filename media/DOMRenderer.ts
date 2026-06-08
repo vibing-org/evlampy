@@ -6,6 +6,8 @@ export class DOMRenderer {
 
   private messagesEl = document.getElementById("messages")!;
   private welcomeEl = document.getElementById("welcome")!;
+  // Tracks the last rendered text length per host, so streaming updates can be O(delta) instead of O(n).
+  private streamLengths = new WeakMap<HTMLElement, number>();
 
   constructor() {
     marked.setOptions({ gfm: true, breaks: true });
@@ -153,23 +155,101 @@ export class DOMRenderer {
       el.appendChild(reportHost);
     }
 
+    const isStreaming = turn.status === "waiting" || turn.status === "streaming";
     const final = turn.status === "done" || turn.status === "error";
 
-    this.renderAssistantReasoning(reasoningHost, turn.reasoning, final);
-
-    const answerHtml = this.renderAssistantAnswer(turn, final);
-    this.setInnerHtmlIfChanged(answerHost, answerHtml);
-
-    if (turn.report) {
-      this.annotateAssistantReport(turn.report, answerHost);
-      this.setInnerHtmlIfChanged(reportHost, this.renderApplyReportHtml(turn.report));
+    if (isStreaming) {
+      // Fast path: plain-text updates only. No marked.parse, no innerHTML churn, no syntax highlighting.
+      // The full render (with markdown + highlighting) runs once when streaming ends.
+      this.streamReasoning(reasoningHost, turn.reasoning);
+      this.streamAnswer(answerHost, turn);
     } else {
-      this.setInnerHtmlIfChanged(reportHost, "");
+      this.renderAssistantReasoning(reasoningHost, turn.reasoning, final);
+
+      const answerHtml = this.renderAssistantAnswer(turn, final);
+      this.setInnerHtmlIfChanged(answerHost, answerHtml);
+
+      if (turn.report) {
+        this.annotateAssistantReport(turn.report, answerHost);
+        this.setInnerHtmlIfChanged(reportHost, this.renderApplyReportHtml(turn.report));
+      } else {
+        this.setInnerHtmlIfChanged(reportHost, "");
+      }
+
+      this.applyHighlighting(reasoningHost);
+      this.applyHighlighting(answerHost);
+      this.applyHighlighting(reportHost);
+    }
+  }
+
+  /** Streaming-mode reasoning: a single <pre> that we extend with textNode appends (O(delta) per update). */
+  private streamReasoning(host: HTMLElement, reasoning: string): void {
+    if (!reasoning) {
+      if (host.childElementCount > 0) host.replaceChildren();
+      this.streamLengths.delete(host);
+      return;
     }
 
-    this.applyHighlighting(reasoningHost);
-    this.applyHighlighting(answerHost);
-    this.applyHighlighting(reportHost);
+    let pre = host.querySelector("pre.assistant-stream-reasoning") as HTMLPreElement;
+    if (!pre) {
+      host.replaceChildren();
+      const details = document.createElement("details");
+      details.className = "assistant-reasoning";
+      details.open = true;
+      const summary = document.createElement("summary");
+      summary.textContent = "Thinking";
+      const body = document.createElement("div");
+      body.className = "assistant-reasoning-body";
+      pre = document.createElement("pre");
+      pre.className = "assistant-stream-reasoning";
+      body.appendChild(pre);
+      details.appendChild(summary);
+      details.appendChild(body);
+      host.appendChild(details);
+      pre.textContent = reasoning;
+      this.streamLengths.set(host, reasoning.length);
+      return;
+    }
+
+    const lastLength = this.streamLengths.get(host) || 0;
+    if (reasoning.length > lastLength) {
+      pre.appendChild(document.createTextNode(reasoning.slice(lastLength)));
+      this.streamLengths.set(host, reasoning.length);
+    } else if (reasoning.length < lastLength) {
+      // Reset (rare): replace everything
+      pre.textContent = reasoning;
+      this.streamLengths.set(host, reasoning.length);
+    }
+  }
+
+  /** Streaming-mode answer: a single <div> that we extend with textNode appends (O(delta) per update). */
+  private streamAnswer(host: HTMLElement, turn: AssistantTurn): void {
+    const text = turn.rawText;
+    if (!text) {
+      if (host.childElementCount > 0) host.replaceChildren();
+      this.streamLengths.delete(host);
+      return;
+    }
+
+    let div = host.querySelector("div.assistant-stream-answer") as HTMLElement;
+    if (!div) {
+      host.replaceChildren();
+      div = document.createElement("div");
+      div.className = "assistant-stream-answer";
+      host.appendChild(div);
+      div.textContent = text;
+      this.streamLengths.set(host, text.length);
+      return;
+    }
+
+    const lastLength = this.streamLengths.get(host) || 0;
+    if (text.length > lastLength) {
+      div.appendChild(document.createTextNode(text.slice(lastLength)));
+      this.streamLengths.set(host, text.length);
+    } else if (text.length < lastLength) {
+      div.textContent = text;
+      this.streamLengths.set(host, text.length);
+    }
   }
 
   /** Renders system notifications. */

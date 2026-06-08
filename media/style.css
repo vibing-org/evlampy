@@ -338,6 +338,22 @@ body { display: flex; flex-direction: column; }
 .assistant-reasoning[open] > summary::before, .suggestion[open] > summary::before { transform: rotate(90deg); }
 .assistant-reasoning-body { padding: 4px 0 8px; color: var(--muted); font-size: 0.95em; }
 
+/* Streaming containers: plain text only, no markdown parsing or syntax highlighting.
+   Replaced by the full render (with formatting) once the response is done. */
+.assistant-stream-reasoning,
+.assistant-stream-answer {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: inherit;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  overflow-x: auto;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.95em;
+}
+
 .suggestion {
   border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
   background: var(--vscode-editorWidget-background); margin-top: 12px;
