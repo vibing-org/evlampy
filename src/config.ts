@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { EvlampyConfig } from "./types";
+import { DEFAULT_CODEX_MODELS, normalizeProvider } from "./configDefaults";
 
 export class ConfigError extends Error { }
 
@@ -35,10 +36,12 @@ export async function loadConfig(): Promise<EvlampyConfig> {
   const vsConfig = vscode.workspace.getConfiguration("evlampy");
   
   let config: Partial<EvlampyConfig> = {
+    provider: normalizeProvider(vsConfig.get<string>("provider")),
     userSystemPromptPath: vsConfig.get<string>("userSystemPromptPath"),
     baseURL: vsConfig.get<string>("baseURL"),
     apiKey: vsConfig.get<string>("apiKey"),
     models: vsConfig.get<string[]>("models"),
+    codexModels: vsConfig.get<string[]>("codexModels"),
     serviceTier: vsConfig.get<string>("serviceTier"),
   };
 
@@ -60,12 +63,15 @@ export async function loadConfig(): Promise<EvlampyConfig> {
 
   const apiKey = interpolateEnv(config.apiKey ?? "").trim();
   const models = config.models ?? [];
+  const codexModels = config.codexModels ?? DEFAULT_CODEX_MODELS;
 
   return {
+    provider: normalizeProvider(config.provider),
     userSystemPromptPath: config.userSystemPromptPath,
     baseURL: config.baseURL?.trim() ?? "",
     apiKey,
     models,
+    codexModels,
     serviceTier: config.serviceTier,
   };
 }
@@ -91,11 +97,13 @@ export async function loadUserSystemPrompt(cfg: EvlampyConfig): Promise<string> 
 const SAMPLE_CONFIG = `{
   // This file overrides VS Code global settings for Evlampy.
   // You can define project-specific settings here.
-  "userSystemPromptPath": "AGENTS.md"
-  // "baseURL": "https://openrouter.ai/api/v1",
-  // "apiKey": "\${env:EVLAMPY_API_KEY}",
+  // "provider": "codex",
   // "models": ["openai/gpt-5.5"],
-  // "serviceTier": "flex"
+  // "codexModels": ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"],
+  // "apiKey": "\${env:EVLAMPY_API_KEY}",
+  // "baseURL": "https://openrouter.ai/api/v1",
+  // "serviceTier": "flex",
+  "userSystemPromptPath": "AGENTS.md"
 }
 `;
 

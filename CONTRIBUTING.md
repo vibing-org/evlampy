@@ -19,6 +19,7 @@ Extension Host (Backend):
 - `src/matcher.ts`: Contains the fuzzy algorithm to find where a `<<<<<<< SEARCH` block belongs in a file.
 - `src/parser.ts`: Pure functions that parse the raw LLM string into text blocks and structured `DiffOp` objects.
 - `src/openrouter.ts`: LLM API client. Takes messages and yields text/reasoning deltas.
+- `src/providers/*`: Provider boundary. Contains OpenAI-compatible and Codex CLI backends plus provider-specific translation/parsing.
 - `src/config.ts` & `src/ConfigWatcher.ts`: Reads and watches the global VS Code config and local `.evlampy/config.json` files.
 - `src/prompt.ts`: Constructs the system and user prompts.
 - `src/TokenTimer.ts`: Manages timeouts during LLM streaming.

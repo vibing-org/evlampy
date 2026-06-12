@@ -7,10 +7,11 @@ import { ChatSession } from "./ChatSession";
 import { AttachmentManager } from "./AttachmentManager";
 import { SuggestionManager } from "./SuggestionManager";
 import { WebviewHtmlProvider } from "./WebviewHtmlProvider";
-import { chat } from "./openrouter";
 import { WebviewIntent, HostMessage, DraftAttachment, ChatMsg, ContentBlock, DiffOp } from "./types";
 import { TokenTimer } from "./TokenTimer";
 import { ConfigWatcher } from "./ConfigWatcher";
+import { getProvider } from "./providers";
+import { activeModels } from "./configDefaults";
 
 // Controller. Orchestrates calls and manages the request lifecycle:
 // - Receives Intents from Webview
@@ -36,11 +37,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.session = new ChatSession(context);
 
     this.configWatcher = new ConfigWatcher((config) => {
-      this.session.state.availableModels = config.models;
-      if (!this.session.state.selectedModel && config.models.length > 0) {
+      const models = activeModels(config);
+      this.session.state.availableModels = models;
+      if (!models.includes(this.session.state.selectedModel) && models.length > 0) {
         // If not selected and not in history, use the value from config.
         // Later this field is controlled by intents from the frontend.
-        this.session.state.selectedModel = config.models[0];
+        this.session.state.selectedModel = models[0];
       }
       this.pushSessionState();
     });
@@ -145,9 +147,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     let tokenTimer: TokenTimer | undefined;
     try {
       const config = await loadConfig();
-      if (!config.apiKey) {
-        throw new Error("API key is missing. Please run 'Evlampy: Open Global Config' and set the API key there.");
-      }
+      const provider = getProvider(config);
 
       // Read file contents right before sending
       const resolvedAttachments = await this.resolver.resolveDrafts(drafts);
@@ -182,7 +182,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       tokenTimer = new TokenTimer(this.timeoutAbort);
       tokenTimer.reset();
 
-      const res = await chat({
+      const res = await provider.chat({
         config,
         model,
         effort,
@@ -291,6 +291,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       }
 
       this.session.loadFromHistory(pick.session);
+      await this.configWatcher.refresh();
       this.pushSessionState();
     }
   }

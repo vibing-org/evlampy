@@ -89,6 +89,10 @@
       {
         "command": "evlampy.overrideConfig",
         "title": "Evlampy: Override config for project"
+      },
+      {
+        "command": "evlampy.codexLogin",
+        "title": "Evlampy: Sign in to Codex"
       }
     ],
     "menus": {
@@ -138,15 +142,14 @@
     "configuration": {
       "title": "Evlampy",
       "properties": {
-        "evlampy.apiKey": {
+        "evlampy.provider": {
           "type": "string",
-          "default": "",
-          "description": "API Key for OpenRouter (or other provider). Supports ${env:VAR}."
-        },
-        "evlampy.baseURL": {
-          "type": "string",
-          "default": "https://openrouter.ai/api/v1",
-          "description": "Base URL for the OpenAI-compatible API."
+          "enum": [
+            "openai-compatible",
+            "codex"
+          ],
+          "default": "openai-compatible",
+          "description": "LLM provider mode. Use 'codex' to run through the official Codex CLI with a Codex subscription."
         },
         "evlampy.models": {
           "type": "array",
@@ -161,6 +164,28 @@
             "qwen/qwen3-coder-flash"
           ],
           "description": "List of models available in the chat."
+        },
+        "evlampy.codexModels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "gpt-5.5",
+            "gpt-5.4",
+            "gpt-5.4-mini"
+          ],
+          "description": "Codex CLI models available when evlampy.provider is 'codex'."
+        },
+        "evlampy.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API Key for OpenRouter (or other provider). Supports ${env:VAR}."
+        },
+        "evlampy.baseURL": {
+          "type": "string",
+          "default": "https://openrouter.ai/api/v1",
+          "description": "Base URL for the OpenAI-compatible API."
         },
         "evlampy.serviceTier": {
           "type": "string",

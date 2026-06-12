@@ -226,7 +226,7 @@ export class DOMRenderer {
   private streamAnswer(host: HTMLElement, turn: AssistantTurn): void {
     const text = turn.rawText;
     if (!text) {
-      if (host.childElementCount > 0) host.replaceChildren();
+      this.renderPendingAnswer(host);
       this.streamLengths.delete(host);
       return;
     }
@@ -250,6 +250,26 @@ export class DOMRenderer {
       div.textContent = text;
       this.streamLengths.set(host, text.length);
     }
+  }
+
+  private renderPendingAnswer(host: HTMLElement): void {
+    if (host.querySelector(".assistant-pending")) {
+      return;
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "assistant-pending";
+
+    const spinner = document.createElement("span");
+    spinner.className = "assistant-pending-spinner";
+    spinner.setAttribute("aria-hidden", "true");
+
+    const label = document.createElement("span");
+    label.textContent = "Evlampy is thinking...";
+
+    wrapper.appendChild(spinner);
+    wrapper.appendChild(label);
+    host.replaceChildren(wrapper);
   }
 
   /** Renders system notifications. */

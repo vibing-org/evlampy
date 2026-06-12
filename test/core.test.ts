@@ -2,7 +2,12 @@
 // Run: npm run test:core
 import { parseChatResponse } from "../src/parser";
 import { findMatch } from "../src/matcher";
-import { ContentBlock, DiffOp } from "../src/types";
+import { ContentBlock, DiffOp, EvlampyConfig } from "../src/types";
+import { activeModels, DEFAULT_CODEX_MODELS, normalizeProvider } from "../src/configDefaults";
+import { buildCodexPrompt, CodexJsonlParser, toCodexReasoningEffort, toCodexUsage, validateCodexConfig } from "../src/providers/codexCli";
+import { getProvider } from "../src/providers";
+import { codexCliProvider } from "../src/providers/codexCli";
+import { openaiCompatibleProvider, validateOpenAiCompatibleConfig } from "../src/providers/openaiCompatible";
 
 /** Helper: extract DiffOps from parsed ContentBlocks. */
 function extractOps(blocks: ContentBlock[]): DiffOp[] {
@@ -205,6 +210,123 @@ function check(name: string, cond: boolean, extra?: unknown) {
       check("applied result", false, r);
     }
   }
+}
+
+// ---- config defaults / active model list ----
+{
+  check("missing provider defaults to openai-compatible", normalizeProvider(undefined) === "openai-compatible");
+  check("codex provider preserved", normalizeProvider("codex") === "codex");
+  check("codex model defaults", DEFAULT_CODEX_MODELS.join(",") === "gpt-5.5,gpt-5.4,gpt-5.4-mini");
+  check(
+    "active models use codexModels for codex",
+    activeModels({ provider: "codex", models: ["openrouter-model"], codexModels: ["codex-model"] })[0] === "codex-model"
+  );
+  check(
+    "active models use models for default provider",
+    activeModels({ provider: "openai-compatible", models: ["openrouter-model"], codexModels: ["codex-model"] })[0] === "openrouter-model"
+  );
+  try {
+    validateOpenAiCompatibleConfig({ apiKey: "" });
+    check("openai-compatible requires apiKey", false);
+  } catch {
+    check("openai-compatible requires apiKey", true);
+  }
+  try {
+    validateCodexConfig({ codexModels: ["gpt-5.5"] });
+    check("codex does not require apiKey", true);
+  } catch (e) {
+    check("codex does not require apiKey", false, e);
+  }
+}
+
+// ---- provider selection ----
+{
+  const baseConfig: EvlampyConfig = {
+    provider: "openai-compatible",
+    userSystemPromptPath: "AGENTS.md",
+    baseURL: "https://example.test",
+    apiKey: "",
+    models: ["m1"],
+    codexModels: ["c1"],
+    serviceTier: "default",
+  };
+
+  check("default provider selects OpenAI-compatible", getProvider(baseConfig) === openaiCompatibleProvider);
+  check("codex provider selects Codex CLI", getProvider({ ...baseConfig, provider: "codex" }) === codexCliProvider);
+}
+
+// ---- codex prompt builder ----
+{
+  const prompt = buildCodexPrompt([
+    { role: "system", content: "system text" },
+    { role: "user", content: "first user" },
+    { role: "assistant", content: "assistant answer" },
+    { role: "user", content: "second user" },
+  ]);
+
+  check("codex prompt includes system", prompt.includes("<system>\nsystem text\n</system>"));
+  check("codex prompt preserves turn order", prompt.indexOf("first user") < prompt.indexOf("assistant answer") && prompt.indexOf("assistant answer") < prompt.indexOf("second user"));
+  check("codex prompt says do not inspect filesystem", prompt.includes("Do not inspect the filesystem."));
+  check("codex prompt says do not run commands", prompt.includes("Do not run shell commands."));
+  check("codex prompt says do not use web search", prompt.includes("Do not use web search."));
+  check("codex prompt says do not edit directly", prompt.includes("Do not edit files directly."));
+}
+
+// ---- codex effort mapping ----
+{
+  check("codex none effort omitted", toCodexReasoningEffort("none") === undefined);
+  check("codex max effort maps to xhigh", toCodexReasoningEffort("max") === "xhigh");
+  check("codex high effort preserved", toCodexReasoningEffort("high") === "high");
+}
+
+// ---- codex usage mapping ----
+{
+  const usage = toCodexUsage({
+    input_tokens: 10,
+    cached_input_tokens: 7,
+    output_tokens: 4,
+    reasoning_output_tokens: 3,
+  });
+  check("codex usage prompt tokens", usage?.promptTokens === 10, usage);
+  check("codex usage completion tokens", usage?.completionTokens === 4, usage);
+  check("codex usage total tokens", usage?.totalTokens === 14, usage);
+  check("codex usage cached tokens", usage?.cachedPromptTokens === 7, usage);
+  check("codex usage reasoning tokens", usage?.reasoningTokens === 3, usage);
+  check("codex usage provider", usage?.provider === "codex", usage);
+}
+
+// ---- codex JSONL parser: success + reasoning + usage ----
+{
+  let text = "";
+  let reasoning = "";
+  const parser = new CodexJsonlParser((delta) => { text += delta; }, (delta) => { reasoning += delta; });
+  parser.handleLine(JSON.stringify({ type: "item.updated", item: { type: "reasoning", text: "thinking" } }));
+  parser.handleLine(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "answer" } }));
+  parser.handleLine(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 2, output_tokens: 3, cached_input_tokens: 1, reasoning_output_tokens: 4 } }));
+  const result = parser.result();
+  check("codex parser streams final agent message", text === "answer" && result.text === "answer", result);
+  check("codex parser streams reasoning", reasoning === "thinking");
+  check("codex parser maps usage", result.usage?.totalTokens === 5 && result.usage.reasoningTokens === 4, result.usage);
+}
+
+// ---- codex JSONL parser: failures ----
+{
+  function throwsFor(name: string, eventLine: string, expected: string) {
+    const parser = new CodexJsonlParser(() => { });
+    try {
+      parser.handleLine(eventLine);
+      check(name, false);
+    } catch (e) {
+      check(name, (e as Error).message.includes(expected), (e as Error).message);
+    }
+  }
+
+  throwsFor("codex parser rejects turn.failed", JSON.stringify({ type: "turn.failed", message: "bad turn" }), "bad turn");
+  throwsFor("codex parser rejects malformed stdout", "{not-json", "malformed JSONL");
+  throwsFor("codex parser rejects command execution", JSON.stringify({ type: "item.completed", item: { type: "command_execution" } }), "command_execution");
+  throwsFor("codex parser rejects file change", JSON.stringify({ type: "item.completed", item: { type: "file_change" } }), "file_change");
+  throwsFor("codex parser rejects web search", JSON.stringify({ type: "item.completed", item: { type: "web_search" } }), "web_search");
+  throwsFor("codex parser rejects mcp tool call", JSON.stringify({ type: "item.completed", item: { type: "mcp_tool_call" } }), "mcp_tool_call");
 }
 
 console.log(failed === 0 ? "\nALL PASSED" : `\n${failed} CHECK(S) FAILED`);

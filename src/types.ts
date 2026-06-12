@@ -1,6 +1,10 @@
 // Shared types between the extension host and (where relevant) the webview.
 
+export type ProviderKind = "openai-compatible" | "codex";
+
 export interface EvlampyConfig {
+  /** Active LLM backend. Defaults to OpenAI-compatible providers. */
+  provider: ProviderKind;
   /** Path (relative to workspace root, or absolute) to the user's system prompt file. Optional. */
   userSystemPromptPath?: string;
   /** OpenAI-compatible base URL. Defaults to OpenRouter. */
@@ -9,6 +13,8 @@ export interface EvlampyConfig {
   apiKey: string;
   /** Models offered in the model picker (OpenRouter slugs, e.g. "qwen/qwen3-max"). */
   models: string[];
+  /** Codex CLI models offered in the model picker when provider === "codex". */
+  codexModels: string[];
   /** Service tier: "flex" (~50% discount on some models, e.g. OpenAI), "priority" or not stated (let AI provider use default). */
   serviceTier?: string;
 }
@@ -31,6 +37,9 @@ export interface UsageInfo {
   totalTokens: number;
   /** USD cost, if the provider reported it. */
   cost?: number;
+  cachedPromptTokens?: number;
+  reasoningTokens?: number;
+  provider?: ProviderKind;
 }
 
 export type EffortLevel = "none" | "low" | "medium" | "high" | "xhigh" | "max";

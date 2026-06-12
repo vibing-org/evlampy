@@ -51,11 +51,21 @@ If you need specific settings for a single project (e.g., a different `AGENTS.md
 
 This creates a local `.evlampy/config.json` file.
 
-- `userSystemPromptPath`: path to your system prompt file. You can use an absolute path or a relative one from the project root.
-- `baseURL`: API address.
-- `apiKey`: your access key (supports `${env:VAR}`).
+- `provider`: `"openai-compatible"` or `"codex"`.
 - `models`: array of model names, exactly as provided by the API.
+- `codexModels`: array of Codex CLI models used when `provider` is `"codex"`.
+- `apiKey`: your access key (supports `${env:VAR}`).
+- `baseURL`: API address.
 - `serviceTier`: use `"flex"` to save money [with some providers](https://openrouter.ai/docs/guides/features/service-tiers).
+- `userSystemPromptPath`: path to your system prompt file. You can use an absolute path or a relative one from the project root.
+
+### Codex subscription
+
+To use a Codex subscription instead of an API key:
+- Change the provider to "codex" in settings `Evlampy: Open Global Config`
+- `Evlampy: Sign in to Codex` to login to your account
+
+Dollar cost is not reported in this case.
 
 ## Demo
 
