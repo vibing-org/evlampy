@@ -176,17 +176,15 @@ export class DOMRenderer {
         this.setInnerHtmlIfChanged(reportHost, "");
       }
 
-      this.applyHighlighting(reasoningHost);
       this.applyHighlighting(answerHost);
       this.applyHighlighting(reportHost);
     }
   }
 
-  /** Streaming-mode reasoning: a single <pre> that we extend with textNode appends (O(delta) per update). */
+  /** Streaming-mode reasoning: a small backend-truncated <pre>, replaced as a whole. */
   private streamReasoning(host: HTMLElement, reasoning: string): void {
     if (!reasoning) {
       if (host.childElementCount > 0) host.replaceChildren();
-      this.streamLengths.delete(host);
       return;
     }
 
@@ -207,18 +205,11 @@ export class DOMRenderer {
       details.appendChild(body);
       host.appendChild(details);
       pre.textContent = reasoning;
-      this.streamLengths.set(host, reasoning.length);
       return;
     }
 
-    const lastLength = this.streamLengths.get(host) || 0;
-    if (reasoning.length > lastLength) {
-      pre.appendChild(document.createTextNode(reasoning.slice(lastLength)));
-      this.streamLengths.set(host, reasoning.length);
-    } else if (reasoning.length < lastLength) {
-      // Reset (rare): replace everything
+    if (pre.textContent !== reasoning) {
       pre.textContent = reasoning;
-      this.streamLengths.set(host, reasoning.length);
     }
   }
 
@@ -308,7 +299,7 @@ export class DOMRenderer {
       details.dataset.finalClosed = "true";
     }
 
-    this.setInnerHtmlIfChanged(body, this.renderMarkdownBlock(reasoning));
+    this.setInnerHtmlIfChanged(body, `<pre class="assistant-stream-reasoning">${this.escapeHtml(reasoning)}</pre>`);
   }
 
   private ensureReasoningElements(host: HTMLElement): { details: HTMLDetailsElement; body: HTMLElement; created: boolean } {

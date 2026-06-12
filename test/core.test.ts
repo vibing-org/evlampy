@@ -295,7 +295,7 @@ function check(name: string, cond: boolean, extra?: unknown) {
   check("codex usage provider", usage?.provider === "codex", usage);
 }
 
-// ---- codex JSONL parser: success + reasoning + usage ----
+// ---- codex JSONL parser: success + usage ----
 {
   let text = "";
   let reasoning = "";
@@ -305,7 +305,7 @@ function check(name: string, cond: boolean, extra?: unknown) {
   parser.handleLine(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 2, output_tokens: 3, cached_input_tokens: 1, reasoning_output_tokens: 4 } }));
   const result = parser.result();
   check("codex parser streams final agent message", text === "answer" && result.text === "answer", result);
-  check("codex parser streams reasoning", reasoning === "thinking");
+  check("codex parser ignores reasoning updates", reasoning === "");
   check("codex parser maps usage", result.usage?.totalTokens === 5 && result.usage.reasoningTokens === 4, result.usage);
 }
 

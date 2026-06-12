@@ -124,8 +124,6 @@ export class CodexJsonlParser {
     if (itemType === "agent_message" && event.type === "item.completed") {
       this.textParts.push(text);
       this.onDelta(text);
-    } else if (itemType === "reasoning" && (event.type === "item.completed" || event.type === "item.updated")) {
-      this.onReasoningDelta?.(text);
     }
   }
 

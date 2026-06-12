@@ -13,6 +13,8 @@ import { ConfigWatcher } from "./ConfigWatcher";
 import { getProvider } from "./providers";
 import { activeModels } from "./configDefaults";
 
+const STREAM_REASONING_LINE_LIMIT = 20;
+
 // Controller. Orchestrates calls and manages the request lifecycle:
 // - Receives Intents from Webview
 // - Calls the appropriate service
@@ -182,6 +184,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       tokenTimer = new TokenTimer(this.timeoutAbort);
       tokenTimer.reset();
 
+      // Keep the full reasoning on the host while streaming, but send only a short tail to the Webview.
+      // Huge reasoning blocks make VS Code Webview IPC and layout noticeably laggy.
+      let fullReasoning = "";
+
       const res = await provider.chat({
         config,
         model,
@@ -195,7 +201,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.pushSessionState();
         },
         onReasoningDelta: (reasoningDelta) => {
-          assistantTurn.reasoning += reasoningDelta;
+          fullReasoning += reasoningDelta;
+          assistantTurn.reasoning = this.tailReasoning(fullReasoning);
           assistantTurn.status = "streaming";
           tokenTimer!.reset();
           this.pushSessionState();
@@ -207,6 +214,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
       // Parse LLM response: extract text and diff operations
       const blocks = parseChatResponse(res.text);
+      // Restore full reasoning after streaming ends. The final UI keeps it collapsed and renders it as plain text.
+      assistantTurn.reasoning = fullReasoning;
       assistantTurn.blocks = blocks;
 
       // Extract only operations to apply to the file system.
@@ -233,6 +242,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.userAbort = undefined;
       this.timeoutAbort = undefined;
     }
+  }
+
+  private tailReasoning(reasoning: string): string {
+    let start = reasoning.length;
+    for (let lines = 0; lines < STREAM_REASONING_LINE_LIMIT && start > 0; lines++) {
+      start = reasoning.lastIndexOf("\n", start - 1);
+      if (start === -1) {
+        return reasoning;
+      }
+    }
+    return "...\n" + reasoning.slice(start + 1);
   }
 
   private async handleAttach(inputPath: string): Promise<void> {
