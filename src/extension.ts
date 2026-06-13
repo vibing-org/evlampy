@@ -27,6 +27,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("evlampy.focusChat", () =>
       vscode.commands.executeCommand("evlampy.chatView.focus")
     ),
+    vscode.commands.registerCommand("evlampy.previousFile", () => diffs.showPreviousFile()),
+    vscode.commands.registerCommand("evlampy.nextFile", () => diffs.showNextFile()),
     vscode.commands.registerCommand("evlampy.acceptFile", () => diffs.acceptCurrentFile()),
     vscode.commands.registerCommand("evlampy.rejectFile", () => diffs.rejectCurrentFile()),
     vscode.commands.registerCommand("evlampy.acceptAll", () => diffs.acceptAll()),
@@ -66,6 +68,16 @@ export function activate(context: vscode.ExtensionContext): void {
       "setContext",
       "evlampy.reviewDiffActive",
       active
+    );
+    void vscode.commands.executeCommand(
+      "setContext",
+      "evlampy.reviewCanGoPrevious",
+      active && diffs.canShowPreviousFile()
+    );
+    void vscode.commands.executeCommand(
+      "setContext",
+      "evlampy.reviewCanGoNext",
+      active && diffs.canShowNextFile()
     );
   };
   context.subscriptions.push(

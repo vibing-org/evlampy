@@ -53,6 +53,16 @@
         "title": "Evlampy: Focus Chat"
       },
       {
+        "command": "evlampy.previousFile",
+        "title": "Evlampy: Previous Suggested File",
+        "icon": "$(arrow-left)"
+      },
+      {
+        "command": "evlampy.nextFile",
+        "title": "Evlampy: Next Suggested File",
+        "icon": "$(arrow-right)"
+      },
+      {
         "command": "evlampy.acceptFile",
         "title": "Evlampy: Accept This File",
         "icon": "$(check)"
@@ -110,24 +120,34 @@
       ],
       "editor/title": [
         {
-          "command": "evlampy.acceptFile",
-          "when": "evlampy.reviewDiffActive",
+          "command": "evlampy.previousFile",
+          "when": "evlampy.reviewCanGoPrevious",
           "group": "navigation@1"
         },
         {
-          "command": "evlampy.rejectFile",
-          "when": "evlampy.reviewDiffActive",
+          "command": "evlampy.nextFile",
+          "when": "evlampy.reviewCanGoNext",
           "group": "navigation@2"
         },
         {
-          "command": "evlampy.acceptAll",
+          "command": "evlampy.acceptFile",
           "when": "evlampy.reviewDiffActive",
           "group": "navigation@3"
         },
         {
-          "command": "evlampy.rejectAll",
+          "command": "evlampy.rejectFile",
           "when": "evlampy.reviewDiffActive",
           "group": "navigation@4"
+        },
+        {
+          "command": "evlampy.acceptAll",
+          "when": "evlampy.reviewDiffActive",
+          "group": "navigation@5"
+        },
+        {
+          "command": "evlampy.rejectAll",
+          "when": "evlampy.reviewDiffActive",
+          "group": "navigation@6"
         }
       ]
     },

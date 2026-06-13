@@ -236,6 +236,49 @@ function check(name: string, cond: boolean, extra?: unknown) {
   check("finished review is inactive", !review.isActive(), afterSecond);
 }
 
+// ---- review session: pending-file navigation ----
+{
+  const review = new ReviewSession();
+  review.start([
+    { path: "a.ts", status: "pending", detail: "1 hunk(s) applied" },
+    { path: "b.ts", status: "pending", detail: "rewritten" },
+    { path: "c.ts", status: "pending", detail: "new file" },
+  ]);
+
+  check("review cannot move before first pending file", !review.canSelectPreviousPending());
+
+  const next = review.moveCurrent(1);
+  check("review moves to next pending file", next.currentRel === "b.ts", next);
+  check("review can move back from middle pending file", review.canSelectPreviousPending());
+  check("review can move forward from middle pending file", review.canSelectNextPending());
+
+  const previous = review.moveCurrent(-1);
+  check("review moves to previous pending file", previous.currentRel === "a.ts", previous);
+
+  review.moveCurrent(1);
+  review.moveCurrent(1);
+  const pastLast = review.moveCurrent(1);
+  check("review does not move past last pending file", pastLast.currentRel === "c.ts" && !review.canSelectNextPending(), pastLast);
+}
+
+// ---- review session: navigation skips decided files ----
+{
+  const review = new ReviewSession();
+  review.start([
+    { path: "a.ts", status: "pending", detail: "1 hunk(s) applied" },
+    { path: "b.ts", status: "pending", detail: "rewritten" },
+    { path: "c.ts", status: "pending", detail: "new file" },
+  ]);
+
+  review.decide("b.ts", "accepted");
+  const afterNext = review.moveCurrent(1);
+  check("next navigation skips accepted files", afterNext.currentRel === "c.ts", afterNext);
+
+  review.decide("a.ts", "rejected");
+  const afterPrevious = review.moveCurrent(-1);
+  check("previous navigation skips rejected files", afterPrevious.currentRel === "c.ts", afterPrevious);
+}
+
 // ---- review session: explicit current selection ----
 {
   const review = new ReviewSession();
@@ -412,6 +455,26 @@ async function runDiffManagerTests() {
   check("diff manager starts review session", diffs.isReviewActive() && diffs.currentReviewRel() === "a.ts", diffs.reviewState());
   check("diff manager opens first review diff", state.openedDiffs.length === 1 && state.openedDiffs[0].modified.fsPath === "/workspace/a.ts", state.openedDiffs);
   check("diff manager emits review state", events.some((event: any) => event.kind === "state" && event.state.phase === "reviewing"), events);
+  check("diff manager cannot go previous from first review file", !diffs.canShowPreviousFile());
+  check("diff manager can go next from first review file", diffs.canShowNextFile());
+
+  const eventCountBeforeNavigation = events.length;
+  await diffs.showNextFile();
+  check("diff manager next navigation changes current file", diffs.currentReviewRel() === "b.ts", diffs.reviewState());
+  check("diff manager next navigation emits review state", events.length === eventCountBeforeNavigation + 1, events);
+  check("diff manager next navigation opens selected diff", state.openedDiffs.length === 2 && state.openedDiffs[1].modified.fsPath === "/workspace/b.ts", state.openedDiffs);
+  check("diff manager cannot go next from last review file", !diffs.canShowNextFile());
+  check("diff manager can go previous from last review file", diffs.canShowPreviousFile());
+
+  await diffs.showPreviousFile();
+  check("diff manager previous navigation changes current file", diffs.currentReviewRel() === "a.ts", diffs.reviewState());
+  check("diff manager previous navigation opens selected diff", state.openedDiffs.length === 3 && state.openedDiffs[2].modified.fsPath === "/workspace/a.ts", state.openedDiffs);
+  check("diff manager navigation does not save documents", state.files.get("/workspace/a.ts") === "const a = 1;\n" && state.files.get("/workspace/b.ts") === "const b = 1;\n", state.files);
+  check("diff manager navigation does not revert documents", aDoc?.getText() === "const a = 2;\n" && bDoc?.getText() === "const b = 2;\n", { a: aDoc?.getText(), b: bDoc?.getText() });
+
+  await diffs.showNextFile();
+  await diffs.acceptCurrentFile();
+  check("diff manager accept applies to selected review file", state.files.get("/workspace/b.ts") === "const b = 2;\n" && diffs.currentReviewRel() === "a.ts", { files: state.files, review: diffs.reviewState() });
 
   resetVscodeMock({ "/workspace/c.ts": "const c = 1;\n" });
   setVscodeMockOpenDiffFailure(true);

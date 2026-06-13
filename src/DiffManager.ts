@@ -31,9 +31,8 @@ interface ReviewItem {
 }
 
 /**
- * Applies diff ops (leaving documents dirty) and drives a linear, per-file
- * review: one diff at a time, accept (save) or reject (revert) each file, then
- * automatically advances to the next pending file. No global accept/reject.
+ * Applies diff ops (leaving documents dirty) and drives per-file review.
+ * ReviewSession owns the current file; editor tabs only project that state.
  */
 export class DiffManager implements vscode.TextDocumentContentProvider {
   private items: ReviewItem[] = [];
@@ -349,7 +348,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     );
   }
 
-  // ---- Linear navigation ----
+  // ---- Navigation ----
 
   private async openCurrent(): Promise<void> {
     const current = this.review.currentRel();
@@ -405,6 +404,32 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
 
   currentReviewRel(): string | undefined {
     return this.review.currentRel();
+  }
+
+  canShowPreviousFile(): boolean {
+    return this.review.canSelectPreviousPending();
+  }
+
+  canShowNextFile(): boolean {
+    return this.review.canSelectNextPending();
+  }
+
+  async showPreviousFile(): Promise<void> {
+    if (!this.canShowPreviousFile()) {
+      return;
+    }
+    this.review.moveCurrent(-1);
+    this.emitReviewState();
+    await this.tryOpenCurrent();
+  }
+
+  async showNextFile(): Promise<void> {
+    if (!this.canShowNextFile()) {
+      return;
+    }
+    this.review.moveCurrent(1);
+    this.emitReviewState();
+    await this.tryOpenCurrent();
   }
 
   async acceptCurrentFile(): Promise<void> {

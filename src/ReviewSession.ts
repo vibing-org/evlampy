@@ -50,6 +50,26 @@ export class ReviewSession {
     return this.snapshot();
   }
 
+  canSelectNextPending(): boolean {
+    const pending = this.pendingFiles();
+    const index = this.pendingIndex(pending);
+    return index >= 0 && index < pending.length - 1;
+  }
+
+  canSelectPreviousPending(): boolean {
+    return this.pendingIndex() > 0;
+  }
+
+  moveCurrent(delta: -1 | 1): ReviewState {
+    const pending = this.pendingFiles();
+    const index = this.pendingIndex(pending);
+    const next = index + delta;
+    if (index >= 0 && next >= 0 && next < pending.length) {
+      this.state.currentRel = pending[next].path;
+    }
+    return this.snapshot();
+  }
+
   /** Mark one file and advance to the next pending file, if any. */
   decide(rel: string, status: Exclude<ReviewStatus, "pending">): ReviewState {
     const item = this.state.files.find((f) => f.path === rel && f.status === "pending");
@@ -77,5 +97,13 @@ export class ReviewSession {
 
   private nextPendingRel(): string | undefined {
     return this.state.files.find((f) => f.status === "pending")?.path;
+  }
+
+  private pendingFiles(): ReviewFile[] {
+    return this.state.files.filter((f) => f.status === "pending");
+  }
+
+  private pendingIndex(pending = this.pendingFiles()): number {
+    return pending.findIndex((f) => f.path === this.state.currentRel);
   }
 }
