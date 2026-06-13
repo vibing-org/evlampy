@@ -212,10 +212,18 @@ export class Composer {
         ? `${displayPaths[i]}:${a.range.startLine}-${a.range.endLine}`
         : displayPaths[i];
       chip.title = chip.textContent;
+      chip.onclick = () => {
+        vscode.postMessage({
+          type: "intent:openAttachment",
+          path: a.path,
+          range: a.type === "selection" ? a.range : undefined
+        });
+      };
       const x = document.createElement("button");
       x.className = "chipx";
       x.textContent = "×"; // button to remove an attachment from the list
-      x.onclick = () => {
+      x.onclick = (e) => {
+        e.stopPropagation();
         this.localAttachments.splice(i, 1);
         this.renderAttachments();
         this.inputEl.focus();
@@ -383,8 +391,8 @@ export class Composer {
     return true;
   }
 
+  // Shortens only the shared directory prefix, leaving unique suffixes untouched.
   private truncateSharedPathPrefix(paths: string[]): string[] {
-    // Shorten only the middle of the shared directory prefix; keep its edges readable.
     const splitPaths = paths.map((path) => path.split("/"));
     const prefixLength = this.sharedPrefixLength(splitPaths);
 
@@ -393,6 +401,7 @@ export class Composer {
     }).join("/"));
   }
 
+  // Finds the longest common directory prefix across the provided paths.
   private sharedPrefixLength(splitPaths: string[][]): number {
     if (splitPaths.length < 2) return 0;
     const minLength = Math.min(...splitPaths.map((parts) => Math.max(0, parts.length - 1)));

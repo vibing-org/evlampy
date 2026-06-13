@@ -152,6 +152,7 @@ export type WebviewIntent =
   | { type: "intent:cancel" }
   | { type: "intent:requestSuggestions"; query: string }
   | { type: "intent:attachPath"; path: string }
+  | { type: "intent:openAttachment"; path: string; range?: { startLine: number; endLine: number } }
   | { type: "intent:openConfig" }
   | { type: "intent:newChat" }
   | { type: "intent:showHistory" }

@@ -114,6 +114,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "intent:attachPath":
         await this.handleAttach(intent.path);
         break;
+      case "intent:openAttachment":
+        await this.handleOpenAttachment(intent.path, intent.range);
+        break;
       case "intent:requestSuggestions":
         await this.handleSuggestions(intent.query);
         break;
@@ -273,6 +276,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async handleSuggestions(query: string): Promise<void> {
     const items = await this.suggestions.getSuggestions(query);
     this.view?.webview.postMessage({ type: "ui:suggestions", query, items } as HostMessage);
+  }
+
+  // Opens the selected attachment in the editor and jumps to its line if present.
+  private async handleOpenAttachment(path: string, range?: { startLine: number; endLine: number }): Promise<void> {
+    try {
+      const uri = this.resolver.resolvePath(path);
+      const options: vscode.TextDocumentShowOptions = {};
+      if (range) {
+        const startLine = Math.max(0, range.startLine - 1);
+        options.selection = new vscode.Range(startLine, 0, startLine, 0);
+      }
+      await vscode.window.showTextDocument(uri, options);
+    } catch (e) {
+      this.session.addSystemTurn({ role: "system", text: `Open attachment failed: ${(e as Error).message}`, status: "error" });
+      this.pushSessionState();
+    }
   }
 
   private handleNewChat(): void {

@@ -7,6 +7,11 @@ const MAX_ATTACH_FILES_PER_FOLDER = 100;
 // Encapsulates attachment handling
 export class AttachmentManager {
 
+  // Resolves a workspace-relative, absolute, or URI path to a VS Code URI.
+  public resolvePath(input: string): vscode.Uri {
+    return this.resolveTarget(input);
+  }
+
   /**
    * If a file is passed, returns it as is.
    * If a folder is passed, recursively expands it into a list of files.
