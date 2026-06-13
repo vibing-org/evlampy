@@ -181,7 +181,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.userAbort.signal.addEventListener("abort", onAbort);
       this.timeoutAbort.signal.addEventListener("abort", onAbort);
 
-      tokenTimer = new TokenTimer(this.timeoutAbort);
+      tokenTimer = new TokenTimer(this.timeoutAbort, config.provider);
       tokenTimer.reset();
 
       // Keep the full reasoning on the host while streaming, but send only a short tail to the Webview.
