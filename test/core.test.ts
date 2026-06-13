@@ -11,6 +11,7 @@ import { openaiCompatibleProvider, validateOpenAiCompatibleConfig } from "../src
 import { ReviewSession } from "../src/ReviewSession";
 import { DiffManager } from "../src/DiffManager";
 import { resetVscodeMock, setVscodeMockOpenDiffFailure, vscodeMockState } from "./vscodeMock";
+import { SuggestionManager } from "../src/SuggestionManager";
 
 /** Helper: extract DiffOps from parsed ContentBlocks. */
 function extractOps(blocks: ContentBlock[]): DiffOp[] {
@@ -27,6 +28,37 @@ function check(name: string, cond: boolean, extra?: unknown) {
     failed++;
     console.error(`FAIL  ${name}`, extra ?? "");
   }
+}
+
+// ---- suggestions: files and folders use the same ordered fuzzy path matching ----
+async function runSuggestionTests() {
+  resetVscodeMock({
+    "/workspace/auto/catalog/moto/index.ts": "export const index = 1;\n",
+    "/workspace/auto/catalog/moto/model.ts": "export const model = 1;\n",
+    "/workspace/auto/catalog/moto/page.ts": "export const page = 1;\n",
+    "/workspace/auto/catalog/moto/utils.ts": "export const utils = 1;\n",
+    "/workspace/auto/catalog/cars/index.ts": "export const cars = 1;\n",
+    "/workspace/other/catalog/moto/index.ts": "export const other = 1;\n",
+  });
+
+  const suggestions = new SuggestionManager();
+
+  const exact = await suggestions.getSuggestions("auto/catalog/moto");
+  check("suggestions include exact-matched folder", exact.includes("auto/catalog/moto/"), exact);
+  check("suggestions include files inside exact-matched folder", exact.includes("auto/catalog/moto/index.ts"), exact);
+
+  const fuzzy = await suggestions.getSuggestions("aut/catalo/moto");
+  check("suggestions include fuzzy-matched files", fuzzy.includes("auto/catalog/moto/index.ts"), fuzzy);
+  check("suggestions include fuzzy-matched folder", fuzzy.includes("auto/catalog/moto/"), fuzzy);
+
+  const shortFuzzy = await suggestions.getSuggestions("c/m");
+  check("suggestions include folder for abbreviated path parts", shortFuzzy.includes("auto/catalog/moto/"), shortFuzzy);
+  check("suggestions keep unrelated ordered matches when they really match", shortFuzzy.includes("other/catalog/moto/"), shortFuzzy);
+
+  const miss = await suggestions.getSuggestions("auto/catalog/boat");
+  check("suggestions omit non-matching folder", !miss.includes("auto/catalog/moto/"), miss);
+
+  suggestions.dispose();
 }
 
 // ---- parser: edit with one hunk ----
@@ -490,14 +522,15 @@ async function runDiffManagerTests() {
   check("diff manager reports diff UI failure", brokenUiState.errors.some((message) => message.includes("failed to open review diff")), brokenUiState.errors);
 }
 
-runDiffManagerTests()
+runSuggestionTests()
+  .then(() => runDiffManagerTests())
   .then(() => {
     console.log(failed === 0 ? "\nALL PASSED" : `\n${failed} CHECK(S) FAILED`);
     process.exit(failed === 0 ? 0 : 1);
   })
   .catch((e) => {
     failed++;
-    console.error("FAIL  diff manager async tests", e);
+    console.error("FAIL  async tests", e);
     console.log(`\n${failed} CHECK(S) FAILED`);
     process.exit(1);
   });

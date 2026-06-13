@@ -6,6 +6,7 @@ const openedDiffs: Array<{ original: Uri; modified: Uri; title: string }> = [];
 const shownDocs: Uri[] = [];
 const errors: string[] = [];
 let failOpenDiff = false;
+const workspaceRoot = "/workspace";
 
 export function resetVscodeMock(initialFiles: Record<string, string> = {}) {
   files.clear();
@@ -32,6 +33,11 @@ export class Uri {
 
   static file(path: string): Uri {
     return new Uri("file", path, `file://${path}`);
+  }
+
+  static joinPath(base: Uri, ...pathSegments: string[]): Uri {
+    const joined = [base.fsPath.replace(/[\\/]+$/g, ""), ...pathSegments].join("/");
+    return Uri.file(joined);
   }
 
   static parse(value: string): Uri {
@@ -136,6 +142,26 @@ export class Disposable {
   }
 }
 
+export enum FileType {
+  Unknown = 0,
+  File = 1,
+  Directory = 2,
+  SymbolicLink = 64,
+}
+
+export class CancellationTokenSource {
+  readonly token = {
+    isCancellationRequested: false,
+    onCancellationRequested: () => new Disposable(),
+  };
+
+  cancel(): void {
+    this.token.isCancellationRequested = true;
+  }
+
+  dispose(): void {}
+}
+
 export class TabInputTextDiff {
   constructor(public readonly original: Uri, public readonly modified: Uri) {}
 }
@@ -145,13 +171,39 @@ export class TabInputText {
 }
 
 export const workspace = {
+  workspaceFolders: [{ uri: Uri.file(workspaceRoot), name: "workspace", index: 0 }],
   registerTextDocumentContentProvider: () => new Disposable(),
   fs: {
-    async stat(uri: Uri): Promise<void> {
-      if (!files.has(uri.fsPath)) {
+    async stat(uri: Uri): Promise<{ type: FileType }> {
+      if (files.has(uri.fsPath)) {
+        return { type: FileType.File };
+      }
+      const dirPrefix = uri.fsPath.replace(/[\\/]+$/g, "") + "/";
+      if (Array.from(files.keys()).some((file) => file.startsWith(dirPrefix))) {
+        return { type: FileType.Directory };
+      }
+      throw new Error("not found");
+    },
+    async readDirectory(uri: Uri): Promise<[string, FileType][]> {
+      const dirPrefix = uri.fsPath.replace(/[\\/]+$/g, "") + "/";
+      const entries = new Map<string, FileType>();
+      for (const file of files.keys()) {
+        if (!file.startsWith(dirPrefix)) continue;
+        const rest = file.slice(dirPrefix.length);
+        const [name, ...tail] = rest.split("/");
+        entries.set(name, tail.length > 0 ? FileType.Directory : FileType.File);
+      }
+      if (entries.size === 0 && !files.has(uri.fsPath)) {
         throw new Error("not found");
       }
-    },
+      return Array.from(entries.entries());
+    }
+  },
+  async findFiles(_include: string, _exclude?: string | null, maxResults?: number): Promise<Uri[]> {
+    const all = Array.from(files.keys())
+      .sort((a, b) => a.localeCompare(b))
+      .map((file) => Uri.file(file));
+    return typeof maxResults === "number" ? all.slice(0, maxResults) : all;
   },
   async openTextDocument(uri: Uri): Promise<TextDocument> {
     if (docs.has(uri.toString())) {

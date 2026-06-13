@@ -42,6 +42,7 @@ export class SuggestionManager {
     if (parts.length === 0) {
       return [];
     }
+    const lowerParts = parts.map((p) => p.toLowerCase());
 
     const globParts = parts.map((p) => `*${p}*`);
     const pathPattern = globParts.join("/**/");
@@ -62,21 +63,11 @@ export class SuggestionManager {
 
       const filePaths = found
         .map((u) => path.relative(root, u.fsPath).replace(/\\/g, "/"))
-        .filter((p) => {
-          // Check that all parts are present in the correct order
-          const lowerP = p.toLowerCase();
-          let lastIndex = 0;
-          for (const pt of parts.map(p => p.toLowerCase())) {
-            const idx = lowerP.indexOf(pt, lastIndex);
-            if (idx === -1) return false;
-            lastIndex = idx + pt.length;
-          }
-          return true;
-        });
+        .filter((p) => this.matchesParts(p, lowerParts));
 
-      const dirPaths = this.extractMatchingDirs(filePaths, query.toLowerCase());
+      const dirPaths = this.extractMatchingDirs(filePaths, lowerParts);
 
-      return [...dirPaths, ...filePaths]
+      return Array.from(new Set([...dirPaths, ...filePaths]))
         .sort((a, b) => a.length - b.length)
         .slice(0, 20);
     } catch {
@@ -85,7 +76,7 @@ export class SuggestionManager {
   }
 
   // Extracts all unique parent folders from the found files and keeps those that match the query
-  private extractMatchingDirs(filePaths: string[], q: string): string[] {
+  private extractMatchingDirs(filePaths: string[], lowerParts: string[]): string[] {
     const dirSet = new Set<string>();
 
     for (const filePath of filePaths) {
@@ -99,7 +90,19 @@ export class SuggestionManager {
 
     return Array.from(dirSet)
       .map((dir) => `${dir}/`)
-      .filter((dir) => dir.toLowerCase().includes(q));
+      .filter((dir) => this.matchesParts(dir, lowerParts));
+  }
+
+  // Checks that all query parts are present in the path in the typed order.
+  private matchesParts(candidate: string, lowerParts: string[]): boolean {
+    const lowerCandidate = candidate.toLowerCase();
+    let lastIndex = 0;
+    for (const part of lowerParts) {
+      const idx = lowerCandidate.indexOf(part, lastIndex);
+      if (idx === -1) return false;
+      lastIndex = idx + part.length;
+    }
+    return true;
   }
 
   public dispose(): void {
