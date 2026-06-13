@@ -7,7 +7,7 @@ import { ChatSession } from "./ChatSession";
 import { AttachmentManager } from "./AttachmentManager";
 import { SuggestionManager } from "./SuggestionManager";
 import { WebviewHtmlProvider } from "./WebviewHtmlProvider";
-import { WebviewIntent, HostMessage, DraftAttachment, ChatMsg, ContentBlock, DiffOp } from "./types";
+import { WebviewIntent, HostMessage, DraftAttachment, ChatMsg, EvlampyConfig, EffortLevel } from "./types";
 import { TokenTimer } from "./TokenTimer";
 import { ConfigWatcher } from "./ConfigWatcher";
 import { getProvider } from "./providers";
@@ -111,6 +111,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.userAbort.abort();
         }
         break;
+      case "intent:editUserTurn":
+        this.handleEditUserTurn(intent.turnId);
+        break;
+      case "intent:retryAssistantTurn":
+        await this.handleRetryAssistantTurn(intent.turnId, intent.model, intent.effort);
+        break;
       case "intent:attachPath":
         await this.handleAttach(intent.path);
         break;
@@ -145,31 +151,83 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.pushSessionState();
   }
 
-  private async handleSend(text: string, model: string, effort: any, drafts: DraftAttachment[]): Promise<void> {
+  private async handleSend(text: string, model: string, effort: EffortLevel, drafts: DraftAttachment[]): Promise<void> {
     if (!text.trim() || !model || !effort) {
       return;
     }
-    let tokenTimer: TokenTimer | undefined;
     try {
       const config = await loadConfig();
-      const provider = getProvider(config);
 
       // Read file contents right before sending
       const resolvedAttachments = await this.resolver.resolveDrafts(drafts);
 
-      // Build user message
-      const userSystemPrompt = await loadUserSystemPrompt(config);
-      const systemMsg = buildSystemMessage(userSystemPrompt);
       const userText = buildUserMessage(text, resolvedAttachments);
 
       this.session.addUserTurn({ role: "user", prompt: text, rawText: userText, attachments: resolvedAttachments });
       this.pushSessionState();
 
-      // Collect chat history
-      const messages = [
-        { role: "system", content: systemMsg } as ChatMsg,
-        ...this.session.getMessagesForLLM(),
-      ];
+      await this.runAssistantRequest(config, model, effort, await this.buildCurrentMessages(config));
+    } catch (e) {
+      this.session.registerError(e as Error);
+      this.pushSessionState();
+    }
+  }
+
+  // Moves a previous user message back into the composer and truncates the branch below it.
+  private handleEditUserTurn(turnId: string): void {
+    if (this.blockIfStreaming("Cannot edit a previous message while the current one is generating. Please stop it first.")) {
+      return;
+    }
+
+    const draft = this.session.editUserTurn(turnId);
+    if (!draft) {
+      return;
+    }
+
+    this.view?.webview.postMessage({
+      type: "ui:setDraft",
+      draft,
+    } as HostMessage);
+    this.pushSessionState();
+  }
+
+  // Retries a previous assistant response using all chat turns before it.
+  private async handleRetryAssistantTurn(turnId: string, model: string, effort: EffortLevel): Promise<void> {
+    if (!model || !effort) {
+      return;
+    }
+    if (this.blockIfStreaming("Cannot retry a message while the current one is generating. Please stop it first.")) {
+      return;
+    }
+
+    try {
+      if (!this.session.retryAssistantTurn(turnId)) {
+        return;
+      }
+      this.pushSessionState();
+
+      const config = await loadConfig();
+      await this.runAssistantRequest(config, model, effort, await this.buildCurrentMessages(config));
+    } catch (e) {
+      this.session.registerError(e as Error);
+      this.pushSessionState();
+    }
+  }
+
+  // Builds the full LLM message list from the current chat state.
+  private async buildCurrentMessages(config: EvlampyConfig): Promise<ChatMsg[]> {
+    const systemMsg = buildSystemMessage(await loadUserSystemPrompt(config));
+    return [
+      { role: "system", content: systemMsg } as ChatMsg,
+      ...this.session.getMessagesForLLM(),
+    ];
+  }
+
+  // Runs the shared LLM request lifecycle for both Send and Retry.
+  private async runAssistantRequest(config: EvlampyConfig, model: string, effort: EffortLevel, messages: ChatMsg[]): Promise<void> {
+    let tokenTimer: TokenTimer | undefined;
+    try {
+      const provider = getProvider(config);
 
       // Show LLM response placeholder in chat
       const assistantTurn = this.session.startAssistantTurn();

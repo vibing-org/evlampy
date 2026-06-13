@@ -81,6 +81,15 @@ export class DOMRenderer {
         header.appendChild(usageHost);
       }
 
+      const actionsHost = document.createElement("div");
+      actionsHost.className = "msg-actions";
+      if (turn.role === "user") {
+        actionsHost.appendChild(this.createActionButton("Edit message", this.editIcon(), () => this.dispatchTurnAction("turn:edit", turn.id)));
+      } else {
+        actionsHost.appendChild(this.createActionButton("Retry response", this.retryIcon(), () => this.dispatchTurnAction("turn:retry", turn.id)));
+      }
+      header.appendChild(actionsHost);
+
       row.appendChild(header);
     }
 
@@ -101,10 +110,38 @@ export class DOMRenderer {
     } else if (turn.role === "assistant") {
       const header = row.querySelector(".msg-header") as HTMLElement;
       const usageHost = header.querySelector(".msg-usage") as HTMLElement;
+      const retryButton = header.querySelector(".msg-action") as HTMLButtonElement;
+      retryButton.hidden = turn.status !== "done" && turn.status !== "error";
       this.renderAssistantTurn(el, usageHost, turn);
     } else if (turn.role === "system") {
       this.renderSystemTurn(el, turn);
     }
+  }
+
+  /** Builds a header icon button for a turn-level action. */
+  private createActionButton(title: string, icon: string, onClick: () => void): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.className = "msg-action";
+    button.type = "button";
+    button.title = title;
+    button.innerHTML = icon;
+    button.onclick = onClick;
+    return button;
+  }
+
+  /** Emits a DOM event that main.ts turns into a backend intent. */
+  private dispatchTurnAction(type: "turn:edit" | "turn:retry", turnId: string): void {
+    window.dispatchEvent(new CustomEvent(type, { detail: { turnId } }));
+  }
+
+  /** Pencil icon for editing a previous user message. */
+  private editIcon(): string {
+    return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+  }
+
+  /** Refresh icon for retrying a completed or failed assistant response. */
+  private retryIcon(): string {
+    return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>`;
   }
 
   /** Renders the user's text as Markdown, and attachments as collapsed <details> blocks. */

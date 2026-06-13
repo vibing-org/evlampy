@@ -127,6 +127,25 @@ export class Composer {
     this.inputEl.focus();
   }
 
+  /** Replaces the current composer contents with a restored draft. */
+  public setDraft(text: string, attachments: DraftAttachment[]): void {
+    this.inputEl.value = text;
+    this.localAttachments = [...attachments];
+    this.renderAttachments();
+    this.updateInputHeight();
+    this.inputEl.focus();
+  }
+
+  /** Returns the currently selected model for actions outside the composer. */
+  public selectedModel(): string {
+    return this.modelEl.value;
+  }
+
+  /** Returns the currently selected effort for actions outside the composer. */
+  public selectedEffort(): EffortLevel {
+    return this.effortEl.value as EffortLevel;
+  }
+
   /** Displays suggestions and positions them above the input field. */
   public showSuggestions(query: string, items: string[]) {
     this.suggestionItems = items;

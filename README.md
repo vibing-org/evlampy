@@ -36,6 +36,8 @@ System design is still done by the developer. Even if an LLM generates a design 
 6. Evlampy automatically parses the response and applies all diffs to the files.
 7. The standard VS Code review interface opens. You review the changes for each file, edit them manually if necessary, and click Accept or Reject.
 
+You can edit a previous user message or retry an assistant response.
+
 If the model thinks it lacks context or needs to run a command, it will simply tell you in plain text. It won't take any autonomous actions.
 
 ## Installation

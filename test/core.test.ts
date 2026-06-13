@@ -10,7 +10,8 @@ import { codexCliProvider } from "../src/providers/codexCli";
 import { openaiCompatibleProvider, validateOpenAiCompatibleConfig } from "../src/providers/openaiCompatible";
 import { ReviewSession } from "../src/ReviewSession";
 import { DiffManager } from "../src/DiffManager";
-import { resetVscodeMock, setVscodeMockOpenDiffFailure, vscodeMockState } from "./vscodeMock";
+import { ChatSession } from "../src/ChatSession";
+import { resetVscodeMock, setVscodeMockOpenDiffFailure, Uri, vscodeMockState } from "./vscodeMock";
 import { SuggestionManager } from "../src/SuggestionManager";
 
 /** Helper: extract DiffOps from parsed ContentBlocks. */
@@ -28,6 +29,17 @@ function check(name: string, cond: boolean, extra?: unknown) {
     failed++;
     console.error(`FAIL  ${name}`, extra ?? "");
   }
+}
+
+function createTestExtensionContext(): any {
+  const workspaceState = new Map<string, unknown>();
+  return {
+    globalStorageUri: Uri.file("/global"),
+    workspaceState: {
+      get: (key: string, fallback: unknown) => workspaceState.has(key) ? workspaceState.get(key) : fallback,
+      update: async (key: string, value: unknown) => { workspaceState.set(key, value); },
+    },
+  };
 }
 
 // ---- suggestions: files and folders use the same ordered fuzzy path matching ----
@@ -340,6 +352,59 @@ async function runSuggestionTests() {
   const done = review.decideAll("accepted");
   check("accept all finishes review", done.phase === "done" && !done.currentRel && !review.isActive(), done);
   check("accept all marks every pending file", done.files.every((f) => f.status === "accepted"), done);
+}
+
+// ---- chat session: edit user turn restores draft and truncates branch ----
+{
+  const session = new ChatSession(createTestExtensionContext());
+
+  session.addUserTurn({ role: "user", prompt: "first", rawText: "first raw", attachments: [{ path: "a.ts", content: "A" }] });
+  const firstAssistant = session.startAssistantTurn();
+  firstAssistant.rawText = "first answer";
+  session.finishAssistantTurn({ promptTokens: 1, completionTokens: 2, totalTokens: 3, cost: 0.01 });
+
+  session.addUserTurn({
+    role: "user",
+    prompt: "second",
+    rawText: "second raw",
+    attachments: [{ path: "b.ts", range: { startLine: 2, endLine: 4 }, content: "B" }],
+  });
+  const secondUserId = session.state.turns[2].id;
+  const secondAssistant = session.startAssistantTurn();
+  secondAssistant.rawText = "second answer";
+  session.finishAssistantTurn({ promptTokens: 3, completionTokens: 4, totalTokens: 7, cost: 0.02 });
+
+  const draft = session.editUserTurn(secondUserId);
+
+  check("edit user turn restores prompt", draft?.text === "second", draft);
+  check("edit user turn restores selection attachment", draft?.attachments[0]?.type === "selection" && draft.attachments[0].content === "B", draft);
+  check("edit user turn truncates selected user and below", session.state.turns.length === 2, session.state.turns);
+  check("edit user turn recalculates tokens", session.state.totalTokens === 3, session.state.totalTokens);
+  check("edit user turn recalculates cost", session.state.totalCost === 0.01, session.state.totalCost);
+}
+
+// ---- chat session: retry assistant turn removes response and lower turns ----
+{
+  const session = new ChatSession(createTestExtensionContext());
+
+  session.addUserTurn({ role: "user", prompt: "first", rawText: "first raw", attachments: [] });
+  const firstAssistant = session.startAssistantTurn();
+  firstAssistant.rawText = "first answer";
+  session.finishAssistantTurn({ promptTokens: 1, completionTokens: 2, totalTokens: 3, cost: 0.01 });
+
+  session.addUserTurn({ role: "user", prompt: "second", rawText: "second raw", attachments: [] });
+  const failedAssistant = session.startAssistantTurn();
+  failedAssistant.rawText = "partial answer";
+  const failedAssistantId = failedAssistant.id;
+  session.registerError(new Error("boom"));
+
+  const retried = session.retryAssistantTurn(failedAssistantId);
+  const messages = session.getMessagesForLLM();
+
+  check("retry assistant turn reports success", retried === true, retried);
+  check("retry assistant turn keeps earlier context", messages.map(m => m.content).join("|") === "first raw|first answer|second raw", messages);
+  check("retry assistant turn removes failed assistant and system error", session.state.turns.length === 3, session.state.turns);
+  check("retry assistant turn preserves done assistant usage", session.state.totalTokens === 3 && session.state.totalCost === 0.01, session.state);
 }
 
 // ---- config defaults / active model list ----

@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import * as crypto from "crypto";
-import { GlobalState, UserTurn, AssistantTurn, SystemTurn, ChatMsg, ApplyReport, UsageInfo, EvlampyConfig } from "./types";
+import { GlobalState, UserTurn, AssistantTurn, SystemTurn, ChatMsg, ApplyReport, UsageInfo, DraftAttachment, ResolvedAttachment, DraftMessage } from "./types";
 
 const HISTORY_KEY = "evlampy.history";
 const HISTORY_LIMIT = 20;
@@ -147,6 +147,38 @@ export class ChatSession {
       }));
   }
 
+  // Restores the selected user turn into draft form and removes the later chat branch.
+  public editUserTurn(turnId: string): DraftMessage | undefined {
+    const index = this.getFirstUserTurnIndex(turnId);
+    if (index === -1) {
+      return undefined;
+    }
+
+    const turn = this.state.turns[index] as UserTurn;
+    const draft = {
+      text: turn.prompt,
+      attachments: turn.attachments.map(att => this.toDraftAttachment(att)),
+    };
+
+    this.state.turns.splice(index);
+    this.recalculateTotals();
+    this.saveToHistory();
+    return draft;
+  }
+
+  // Removes the selected assistant turn and later branch.
+  public retryAssistantTurn(turnId: string): boolean {
+    const index = this.getFirstAssistantTurnIndex(turnId);
+    if (index === -1) {
+      return false;
+    }
+
+    this.state.turns.splice(index);
+    this.recalculateTotals();
+    this.saveToHistory();
+    return true;
+  }
+
   private getLastAssistantTurn(): AssistantTurn | undefined {
     for (let i = this.state.turns.length - 1; i >= 0; i--) {
       const t = this.state.turns[i];
@@ -155,6 +187,36 @@ export class ChatSession {
       }
     }
     return undefined;
+  }
+
+  // Finds a concrete user turn by ID before truncating from it.
+  private getFirstUserTurnIndex(turnId: string): number {
+    return this.state.turns.findIndex(t => t.id === turnId && t.role === "user");
+  }
+
+  // Finds a concrete assistant turn by ID before retrying from it.
+  private getFirstAssistantTurnIndex(turnId: string): number {
+    return this.state.turns.findIndex(t => t.id === turnId && t.role === "assistant");
+  }
+
+  // Converts stored attachments back to draft attachments for the composer.
+  private toDraftAttachment(att: ResolvedAttachment): DraftAttachment {
+    if (att.range) {
+      return { type: "selection", path: att.path, range: att.range, content: att.content };
+    }
+    return { type: "file", path: att.path };
+  }
+
+  // Rebuilds aggregate usage after truncating chat history.
+  private recalculateTotals(): void {
+    this.state.totalCost = 0;
+    this.state.totalTokens = 0;
+    for (const turn of this.state.turns) {
+      if (turn.role === "assistant" && turn.usage) {
+        this.state.totalTokens += turn.usage.totalTokens;
+        this.state.totalCost += turn.usage.cost ?? 0;
+      }
+    }
   }
 
   // Asynchronously saves state to workspaceState without blocking the main thread.

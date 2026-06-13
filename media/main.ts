@@ -4,13 +4,29 @@ import { AutoScroller } from "./AutoScroller";
 
 /**
  * Frontend entry point. Initializes classes and wires them together.
- * Components do not know about each other directly, they communicate through callbacks here.
+ * Components do not know about each other directly; this file wires their events together.
  */
 const renderer = new DOMRenderer();
 const scroller = new AutoScroller();
 
 const composer = new Composer(() => {
   scroller.scrollToBottom(true); // force scroll to bottom when sending a message
+});
+
+// Forward turn-level UI actions from the renderer to the backend.
+window.addEventListener("turn:edit", (event) => {
+  const { turnId } = (event as CustomEvent<{ turnId: string }>).detail;
+  vscode.postMessage({ type: "intent:editUserTurn", turnId });
+});
+
+window.addEventListener("turn:retry", (event) => {
+  const { turnId } = (event as CustomEvent<{ turnId: string }>).detail;
+  vscode.postMessage({
+    type: "intent:retryAssistantTurn",
+    turnId,
+    model: composer.selectedModel(),
+    effort: composer.selectedEffort(),
+  });
 });
 
 window.addEventListener("message", (ev: MessageEvent) => {
@@ -26,6 +42,9 @@ window.addEventListener("message", (ev: MessageEvent) => {
       break;
     case "ui:addDraftAttachments":
       composer.addDraftAttachments(m.attachments);
+      break;
+    case "ui:setDraft":
+      composer.setDraft(m.draft.text, m.draft.attachments);
       break;
   }
 });

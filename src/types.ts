@@ -24,6 +24,12 @@ export type DraftAttachment =
   | { type: "file"; path: string }
   | { type: "selection"; path: string; range: { startLine: number; endLine: number }; content: string };
 
+/** Composer draft restored from a previous user turn. */
+export interface DraftMessage {
+  text: string;
+  attachments: DraftAttachment[];
+}
+
 /** Fully resolved file with content. Formed at the moment of Send for history and LLM. */
 export interface ResolvedAttachment {
   path: string;
@@ -150,6 +156,8 @@ export type WebviewIntent =
   | { type: "intent:ready" }
   | { type: "intent:send"; text: string; model: string; effort: EffortLevel; attachments: DraftAttachment[] }
   | { type: "intent:cancel" }
+  | { type: "intent:editUserTurn"; turnId: string }
+  | { type: "intent:retryAssistantTurn"; turnId: string; model: string; effort: EffortLevel }
   | { type: "intent:requestSuggestions"; query: string }
   | { type: "intent:attachPath"; path: string }
   | { type: "intent:openAttachment"; path: string; range?: { startLine: number; endLine: number } }
@@ -164,7 +172,8 @@ export type WebviewIntent =
 export type HostMessage =
   | { type: "state:update"; state: GlobalState }
   | { type: "ui:suggestions"; query: string; items: string[] }
-  | { type: "ui:addDraftAttachments"; attachments: DraftAttachment[] };
+  | { type: "ui:addDraftAttachments"; attachments: DraftAttachment[] }
+  | { type: "ui:setDraft"; draft: DraftMessage };
 
 export interface ApplyFailure {
   hunkIndex?: number;
