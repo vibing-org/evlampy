@@ -104,6 +104,29 @@ function check(name: string, cond: boolean, extra?: unknown) {
   }
 }
 
+// ---- parser: fenced evlampy tag should not leak empty code blocks ----
+{
+  const resp = [
+    "```xml",
+    "<evlampy:new path=\"index.html\">",
+    "<!doctype html>",
+    "<html lang=\"en\">",
+    "</html>",
+    "</evlampy:new>",
+    "```",
+    "The file is ready.",
+  ].join("\n");
+  const blocks = parseChatResponse(resp);
+  const ops = extractOps(blocks);
+  check("fenced evlampy tag: one op", ops.length === 1, ops);
+  check("fenced evlampy tag: no leading fence text", blocks[0]?.type === "op", blocks);
+  if (ops[0]?.kind === "new") {
+    check("fenced evlampy tag: content kept", ops[0].content.includes("<!doctype html>"));
+  }
+  const textBlocks = blocks.filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text");
+  check("fenced evlampy tag: closing fence removed", textBlocks.every(b => !b.content.includes("```")), textBlocks);
+}
+
 // ---- parser: two hunks, xml wrapper, inner fences in first ----
 {
   const resp = [
