@@ -112,7 +112,7 @@ export interface AssistantTurn extends TurnId {
   role: "assistant";
   /** Raw text that is populated during streaming */
   rawText: string;
-  /** Raw reasoning text */
+  /** Reasoning text to display. During streaming this is backend-truncated; after completion it is full reasoning. */
   reasoning: string;
   status: "waiting" | "streaming" | "done" | "error";
   usage?: UsageInfo;

@@ -244,15 +244,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private tailReasoning(reasoning: string): string {
-    let start = reasoning.length;
-    for (let lines = 0; lines < STREAM_REASONING_LINE_LIMIT && start > 0; lines++) {
-      start = reasoning.lastIndexOf("\n", start - 1);
+  private tailReasoning(reasoning: string, lineLimit = STREAM_REASONING_LINE_LIMIT): string {
+    const stableReasoning = reasoning.replace(/\n+$/g, "");
+    if (!stableReasoning || lineLimit <= 0) {
+      return stableReasoning;
+    }
+
+    let start = stableReasoning.length;
+    for (let lines = 0; lines < lineLimit && start > 0; lines++) {
+      start = stableReasoning.lastIndexOf("\n", start - 1);
       if (start === -1) {
-        return reasoning;
+        return stableReasoning;
       }
     }
-    return "...\n" + reasoning.slice(start + 1);
+    return "...\n" + stableReasoning.slice(start + 1);
   }
 
   private async handleAttach(inputPath: string): Promise<void> {
