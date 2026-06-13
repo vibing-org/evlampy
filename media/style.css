@@ -220,6 +220,31 @@ body { display: flex; flex-direction: column; }
   border: 1px solid var(--chip-border);
   border-radius: 6px; padding: 4px 8px;
   font-size: 0.85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.chip:hover {
+  background: var(--vscode-list-hoverBackground);
+  border-color: var(--vscode-focusBorder);
+}
+.chip-open {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  opacity: 0.65;
+  transition: opacity 0.15s, color 0.15s;
+}
+.chip:hover .chip-open {
+  opacity: 1;
+  color: var(--vscode-foreground);
+}
+.chip-clear {
+  cursor: default;
+}
+.chip-clear:hover {
+  background: var(--error);
+  color: var(--vscode-editor-background);
 }
 
 .chipx {

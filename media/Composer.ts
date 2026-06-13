@@ -206,29 +206,7 @@ export class Composer {
     // Chips display compact paths while keeping the real attachment paths unchanged.
     const displayPaths = this.truncateSharedPathPrefix(this.localAttachments.map((a) => a.path));
     this.localAttachments.forEach((a, i) => {
-      const chip = document.createElement("span");
-      chip.className = "chip";
-      chip.textContent = a.type === "selection"
-        ? `${displayPaths[i]}:${a.range.startLine}-${a.range.endLine}`
-        : displayPaths[i];
-      chip.title = chip.textContent;
-      chip.onclick = () => {
-        vscode.postMessage({
-          type: "intent:openAttachment",
-          path: a.path,
-          range: a.type === "selection" ? a.range : undefined
-        });
-      };
-      const x = document.createElement("button");
-      x.className = "chipx";
-      x.textContent = "×"; // button to remove an attachment from the list
-      x.onclick = (e) => {
-        e.stopPropagation();
-        this.localAttachments.splice(i, 1);
-        this.renderAttachments();
-        this.inputEl.focus();
-      };
-      chip.appendChild(x);
+      const chip = this.buildAttachmentChip(a, displayPaths[i], i);
       this.attachmentsEl.appendChild(chip);
     });
 
@@ -249,6 +227,53 @@ export class Composer {
     if (this.suggestionsVisible()) {
       this.layoutSuggestions();
     }
+  }
+
+  /** Builds a single attachment chip: open-icon + label + remove button. */
+  private buildAttachmentChip(a: DraftAttachment, displayPath: string, index: number): HTMLElement {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.title = "Click to open";
+
+    chip.appendChild(this.buildOpenIcon());
+    chip.appendChild(document.createTextNode(
+      a.type === "selection"
+        ? `${displayPath}:${a.range.startLine}-${a.range.endLine}`
+        : displayPath
+    ));
+    chip.appendChild(this.buildRemoveButton(index));
+
+    chip.onclick = () => {
+      vscode.postMessage({
+        type: "intent:openAttachment",
+        path: a.path,
+        range: a.type === "selection" ? a.range : undefined
+      });
+    };
+    return chip;
+  }
+
+  /** Up-left arrow that signals the chip is clickable. */
+  private buildOpenIcon(): HTMLElement {
+    const icon = document.createElement("span");
+    icon.className = "chip-open";
+    icon.setAttribute("aria-hidden", "true");
+    icon.innerHTML = `<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 11L5 5M5 5H10M5 5V10"/></svg>`;
+    return icon;
+  }
+
+  /** "×" button that removes this attachment from the list. */
+  private buildRemoveButton(index: number): HTMLButtonElement {
+    const x = document.createElement("button");
+    x.className = "chipx";
+    x.textContent = "×";
+    x.onclick = (e) => {
+      e.stopPropagation();
+      this.localAttachments.splice(index, 1);
+      this.renderAttachments();
+      this.inputEl.focus();
+    };
+    return x;
   }
 
   /** Formats and displays the total cost and tokens. */
