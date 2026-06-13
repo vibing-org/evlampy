@@ -384,12 +384,12 @@ export class Composer {
   }
 
   private truncateSharedPathPrefix(paths: string[]): string[] {
-    // Only the shared directory prefix is shortened, so unique path parts stay readable.
+    // Shorten only the middle of the shared directory prefix; keep its edges readable.
     const splitPaths = paths.map((path) => path.split("/"));
     const prefixLength = this.sharedPrefixLength(splitPaths);
 
     return splitPaths.map((parts) => parts.map((part, i) => {
-      return i < prefixLength ? part.slice(0, 1) : part;
+      return i > 0 && i < prefixLength - 1 ? part.slice(0, 1) : part;
     }).join("/"));
   }
 
