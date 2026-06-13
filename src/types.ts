@@ -73,11 +73,19 @@ export type DiffOp =
 
 export type ReviewStatus = "pending" | "accepted" | "rejected";
 
+export type ReviewPhase = "idle" | "reviewing" | "done";
+
 export interface ReviewFile {
   path: string;
   status: ReviewStatus;
   /** Short note (e.g. "3 hunk(s) applied", "new file", "deleted"). */
   detail: string;
+}
+
+export interface ReviewState {
+  phase: ReviewPhase;
+  files: ReviewFile[];
+  currentRel?: string;
 }
 
 // ---- Global State Model (Single Source of Truth) ----
@@ -183,7 +191,4 @@ export interface ApplyReport {
 // ---- Review events (applier -> provider/extension) ----
 
 export type ReviewEvent =
-  | { kind: "start"; files: ReviewFile[] }
-  | { kind: "update"; path: string; status: ReviewStatus }
-  | { kind: "done" }
-  | { kind: "navigated" };
+  | { kind: "state"; state: ReviewState };

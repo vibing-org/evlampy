@@ -8,6 +8,9 @@ import { buildCodexPrompt, CodexJsonlParser, toCodexReasoningEffort, toCodexUsag
 import { getProvider } from "../src/providers";
 import { codexCliProvider } from "../src/providers/codexCli";
 import { openaiCompatibleProvider, validateOpenAiCompatibleConfig } from "../src/providers/openaiCompatible";
+import { ReviewSession } from "../src/ReviewSession";
+import { DiffManager } from "../src/DiffManager";
+import { resetVscodeMock, setVscodeMockOpenDiffFailure, vscodeMockState } from "./vscodeMock";
 
 /** Helper: extract DiffOps from parsed ContentBlocks. */
 function extractOps(blocks: ContentBlock[]): DiffOp[] {
@@ -212,6 +215,58 @@ function check(name: string, cond: boolean, extra?: unknown) {
   }
 }
 
+// ---- review session: state machine owns current file ----
+{
+  const review = new ReviewSession();
+  const started = review.start([
+    { path: "a.ts", status: "pending", detail: "1 hunk(s) applied" },
+    { path: "b.ts", status: "pending", detail: "rewritten" },
+  ]);
+
+  check("review starts active", started.phase === "reviewing" && review.isActive(), started);
+  check("review starts at first pending file", review.currentRel() === "a.ts", started);
+
+  const afterFirst = review.decide("a.ts", "accepted");
+  check("accept advances to next pending file", afterFirst.currentRel === "b.ts", afterFirst);
+  check("accepted file is marked", afterFirst.files[0].status === "accepted", afterFirst);
+  check("next file stays pending", afterFirst.files[1].status === "pending", afterFirst);
+
+  const afterSecond = review.decide("b.ts", "rejected");
+  check("review finishes after last pending file", afterSecond.phase === "done" && !afterSecond.currentRel, afterSecond);
+  check("finished review is inactive", !review.isActive(), afterSecond);
+}
+
+// ---- review session: explicit current selection ----
+{
+  const review = new ReviewSession();
+  review.start([
+    { path: "a.ts", status: "pending", detail: "1 hunk(s) applied" },
+    { path: "b.ts", status: "pending", detail: "rewritten" },
+  ]);
+
+  const selected = review.setCurrent("b.ts");
+  check("review can select another pending file", selected.currentRel === "b.ts", selected);
+
+  const afterSelected = review.decide("b.ts", "accepted");
+  check("after accepting selected file, review returns to remaining pending file", afterSelected.currentRel === "a.ts", afterSelected);
+}
+
+// ---- review session: bulk decisions and immutable snapshots ----
+{
+  const review = new ReviewSession();
+  const started = review.start([
+    { path: "a.ts", status: "pending", detail: "new file" },
+    { path: "b.ts", status: "pending", detail: "deleted" },
+  ]);
+
+  started.files[0].status = "rejected";
+  check("snapshot mutation does not affect session", review.snapshot().files[0].status === "pending", review.snapshot());
+
+  const done = review.decideAll("accepted");
+  check("accept all finishes review", done.phase === "done" && !done.currentRel && !review.isActive(), done);
+  check("accept all marks every pending file", done.files.every((f) => f.status === "accepted"), done);
+}
+
 // ---- config defaults / active model list ----
 {
   check("missing provider defaults to openai-compatible", normalizeProvider(undefined) === "openai-compatible");
@@ -329,5 +384,57 @@ function check(name: string, cond: boolean, extra?: unknown) {
   throwsFor("codex parser rejects mcp tool call", JSON.stringify({ type: "item.completed", item: { type: "mcp_tool_call" } }), "mcp_tool_call");
 }
 
-console.log(failed === 0 ? "\nALL PASSED" : `\n${failed} CHECK(S) FAILED`);
-process.exit(failed === 0 ? 0 : 1);
+// ---- DiffManager: applies edits and opens review diff ----
+async function runDiffManagerTests() {
+  const root = "/workspace";
+  resetVscodeMock({
+    "/workspace/a.ts": "const a = 1;\n",
+    "/workspace/b.ts": "const b = 1;\n",
+  });
+
+  const diffs = new DiffManager(root);
+  const events: unknown[] = [];
+  diffs.onReviewChange((event) => events.push(event));
+
+  const report = await diffs.apply([
+    { kind: "edit", path: "a.ts", hunks: [{ search: "const a = 1;", replace: "const a = 2;" }] },
+    { kind: "edit", path: "b.ts", hunks: [{ search: "const b = 1;", replace: "const b = 2;" }] },
+  ]);
+
+  const state = vscodeMockState();
+  const aDoc = state.docs.get("file:///workspace/a.ts");
+  const bDoc = state.docs.get("file:///workspace/b.ts");
+
+  check("diff manager reports both edits applied", report.appliedCount === 2 && report.failedCount === 0, report);
+  check("diff manager leaves first edited document dirty", aDoc?.isDirty === true, aDoc);
+  check("diff manager applies first edit to document text", aDoc?.getText() === "const a = 2;\n", aDoc?.getText());
+  check("diff manager applies second edit to document text", bDoc?.getText() === "const b = 2;\n", bDoc?.getText());
+  check("diff manager starts review session", diffs.isReviewActive() && diffs.currentReviewRel() === "a.ts", diffs.reviewState());
+  check("diff manager opens first review diff", state.openedDiffs.length === 1 && state.openedDiffs[0].modified.fsPath === "/workspace/a.ts", state.openedDiffs);
+  check("diff manager emits review state", events.some((event: any) => event.kind === "state" && event.state.phase === "reviewing"), events);
+
+  resetVscodeMock({ "/workspace/c.ts": "const c = 1;\n" });
+  setVscodeMockOpenDiffFailure(true);
+  const diffsWithBrokenUi = new DiffManager(root);
+  const reportWithBrokenUi = await diffsWithBrokenUi.apply([
+    { kind: "edit", path: "c.ts", hunks: [{ search: "const c = 1;", replace: "const c = 2;" }] },
+  ]);
+  const brokenUiState = vscodeMockState();
+  const cDoc = brokenUiState.docs.get("file:///workspace/c.ts");
+
+  check("diff manager keeps apply report when diff UI fails", reportWithBrokenUi.appliedCount === 1 && reportWithBrokenUi.failedCount === 0, reportWithBrokenUi);
+  check("diff manager keeps edited document when diff UI fails", cDoc?.getText() === "const c = 2;\n" && cDoc.isDirty, cDoc?.getText());
+  check("diff manager reports diff UI failure", brokenUiState.errors.some((message) => message.includes("failed to open review diff")), brokenUiState.errors);
+}
+
+runDiffManagerTests()
+  .then(() => {
+    console.log(failed === 0 ? "\nALL PASSED" : `\n${failed} CHECK(S) FAILED`);
+    process.exit(failed === 0 ? 0 : 1);
+  })
+  .catch((e) => {
+    failed++;
+    console.error("FAIL  diff manager async tests", e);
+    console.log(`\n${failed} CHECK(S) FAILED`);
+    process.exit(1);
+  });

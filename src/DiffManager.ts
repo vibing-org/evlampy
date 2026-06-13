@@ -1,17 +1,19 @@
 import * as vscode from "vscode";
 import * as path from "path";
- import {
-   ApplyFailure,
-   ApplyReport,
-   ApplyResultItem,
-   DiffOp,
-   Hunk,
-   ReviewEvent,
-   ReviewFile,
-   ReviewStatus,
- } from "./types";
+import {
+  ApplyFailure,
+  ApplyReport,
+  ApplyResultItem,
+  DiffOp,
+  Hunk,
+  ReviewEvent,
+  ReviewFile,
+  ReviewState,
+  ReviewStatus,
+} from "./types";
 import { findMatch } from "./matcher";
 import { stripPlaceholders } from "./parser";
+import { ReviewSession } from "./ReviewSession";
 
 const ORIG_SCHEME = "evlampy-orig";
 
@@ -36,6 +38,8 @@ interface ReviewItem {
 export class DiffManager implements vscode.TextDocumentContentProvider {
   private items: ReviewItem[] = [];
   private originals = new Map<string, string>();
+  /** Review flow SSOT; editor tabs only display the current item. */
+  private review = new ReviewSession();
   private counter = 0;
 
   private readonly _onReviewChange = new vscode.EventEmitter<ReviewEvent>();
@@ -64,6 +68,8 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
   async apply(ops: DiffOp[]): Promise<ApplyReport> {
     this.items = [];
     this.originals.clear();
+    this.review.reset();
+    this.emitReviewState();
 
     const report: ApplyResultItem[] = [];
     for (let opIndex = 0; opIndex < ops.length; opIndex++) {
@@ -84,8 +90,9 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     const appliedCount = report.filter((i) => i.ok).length;
 
     if (this.items.length > 0) {
-      this._onReviewChange.fire({ kind: "start", files: this.reviewFiles() });
-      await this.openFirstPending();
+      this.review.start(this.reviewFiles());
+      this.emitReviewState();
+      await this.tryOpenCurrent();
     }
 
     return {
@@ -344,23 +351,27 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
 
   // ---- Linear navigation ----
 
-  private async openFirstPending(): Promise<void> {
-    const next = this.items.find((i) => i.status === "pending");
+  private async openCurrent(): Promise<void> {
+    const current = this.review.currentRel();
+    const next = current
+      ? this.items.find((i) => i.rel === current && i.status === "pending")
+      : undefined;
     if (next) {
       await this.openDiff(next);
-      this._onReviewChange.fire({ kind: "navigated" });
+    }
+  }
+
+  private async tryOpenCurrent(): Promise<void> {
+    try {
+      await this.openCurrent();
+    } catch (e) {
+      vscode.window.showErrorMessage(`Evlampy: failed to open review diff: ${(e as Error).message}`);
     }
   }
 
   private async advanceFrom(decided: ReviewItem): Promise<void> {
     await this.closeDiffTab(decided);
-    const next = this.items.find((i) => i.status === "pending");
-    if (next) {
-      await this.openDiff(next);
-      this._onReviewChange.fire({ kind: "navigated" });
-    } else {
-      this._onReviewChange.fire({ kind: "done" });
-    }
+    await this.tryOpenCurrent();
   }
 
   private async closeDiffTab(item: ReviewItem): Promise<void> {
@@ -384,18 +395,30 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
 
   // ---- Decisions (per file) ----
 
-  /** The review file shown in the currently active diff tab, if any. */
-  activeReviewRel(): string | undefined {
-    const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
-    const input = tab?.input as unknown;
-    if (input instanceof vscode.TabInputTextDiff && input.original.scheme === ORIG_SCHEME) {
-      return this.items.find((i) => i.uri.toString() === input.modified.toString())?.rel;
+  reviewState(): ReviewState {
+    return this.review.snapshot();
+  }
+
+  isReviewActive(): boolean {
+    return this.review.isActive();
+  }
+
+  currentReviewRel(): string | undefined {
+    return this.review.currentRel();
+  }
+
+  async acceptCurrentFile(): Promise<void> {
+    const rel = this.review.currentRel();
+    if (rel) {
+      await this.acceptFile(rel);
     }
-    if (input instanceof vscode.TabInputText && input.uri.scheme === ORIG_SCHEME) {
-      // A deleted-file preview is open
-      return this.items.find((i) => i.origUri.toString() === input.uri.toString())?.rel;
+  }
+
+  async rejectCurrentFile(): Promise<void> {
+    const rel = this.review.currentRel();
+    if (rel) {
+      await this.rejectFile(rel);
     }
-    return undefined;
   }
 
   async acceptFile(rel: string): Promise<void> {
@@ -410,7 +433,8 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
       }
     }
     item.status = "accepted";
-    this._onReviewChange.fire({ kind: "update", path: rel, status: "accepted" });
+    this.review.decide(rel, "accepted");
+    this.emitReviewState();
     await this.advanceFrom(item);
   }
 
@@ -421,16 +445,18 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     }
     await this.revert(item);
     item.status = "rejected";
-    this._onReviewChange.fire({ kind: "update", path: rel, status: "rejected" });
+    this.review.decide(rel, "rejected");
+    this.emitReviewState();
     await this.advanceFrom(item);
   }
 
   /** Re-open the diff for a file (e.g., clicked in the panel list). */
   async showFile(rel: string): Promise<void> {
-    const item = this.items.find((i) => i.rel === rel);
+    const item = this.items.find((i) => i.rel === rel && i.status === "pending");
     if (item) {
+      this.review.setCurrent(rel);
+      this.emitReviewState();
       await this.openDiff(item);
-      this._onReviewChange.fire({ kind: "navigated" });
     }
   }
 
@@ -444,10 +470,10 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
         }
       }
       item.status = "accepted";
-      this._onReviewChange.fire({ kind: "update", path: item.rel, status: "accepted" });
       await this.closeDiffTab(item);
     }
-    this._onReviewChange.fire({ kind: "done" });
+    this.review.decideAll("accepted");
+    this.emitReviewState();
   }
 
   /** Reject (revert) all still-pending files at once. */
@@ -455,10 +481,15 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     for (const item of this.items.filter((i) => i.status === "pending")) {
       await this.revert(item);
       item.status = "rejected";
-      this._onReviewChange.fire({ kind: "update", path: item.rel, status: "rejected" });
       await this.closeDiffTab(item);
     }
-    this._onReviewChange.fire({ kind: "done" });
+    this.review.decideAll("rejected");
+    this.emitReviewState();
+  }
+
+  /** Push the full review state after every transition. */
+  private emitReviewState(): void {
+    this._onReviewChange.fire({ kind: "state", state: this.review.snapshot() });
   }
 
   private async revert(item: ReviewItem): Promise<void> {

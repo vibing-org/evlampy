@@ -27,18 +27,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("evlampy.focusChat", () =>
       vscode.commands.executeCommand("evlampy.chatView.focus")
     ),
-    vscode.commands.registerCommand("evlampy.acceptFile", async () => {
-      const rel = diffs.activeReviewRel();
-      if (rel) {
-        await diffs.acceptFile(rel);
-      }
-    }),
-    vscode.commands.registerCommand("evlampy.rejectFile", async () => {
-      const rel = diffs.activeReviewRel();
-      if (rel) {
-        await diffs.rejectFile(rel);
-      }
-    }),
+    vscode.commands.registerCommand("evlampy.acceptFile", () => diffs.acceptCurrentFile()),
+    vscode.commands.registerCommand("evlampy.rejectFile", () => diffs.rejectCurrentFile()),
     vscode.commands.registerCommand("evlampy.acceptAll", () => diffs.acceptAll()),
     vscode.commands.registerCommand("evlampy.rejectAll", () => diffs.rejectAll()),
     vscode.commands.registerCommand("evlampy.newChat", () => 
@@ -69,9 +59,9 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // Show the diff-editor Accept/Reject buttons only while an Evlampy diff is active.
+  // Review state is owned by DiffManager; VS Code editor tabs only display it.
   const updateContext = () => {
-    const active = !!diffs.activeReviewRel();
+    const active = diffs.isReviewActive();
     void vscode.commands.executeCommand(
       "setContext",
       "evlampy.reviewDiffActive",
@@ -79,8 +69,6 @@ export function activate(context: vscode.ExtensionContext): void {
     );
   };
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor(updateContext),
-    vscode.window.tabGroups.onDidChangeTabs(updateContext),
     diffs.onReviewChange(updateContext)
   );
   updateContext();

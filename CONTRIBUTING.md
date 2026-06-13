@@ -15,7 +15,8 @@ Extension Host (Backend):
 - `src/ChatSession.ts`: The SSOT for state. Manages the `GlobalState` object. Automatically handles saving history to `workspaceState` and debug-logging chats to disk.
 - `src/AttachmentManager.ts`: Resolves and validates user inputs (file/folder paths) into actual file contents. Enforces limits on folder sizes.
 - `src/SuggestionManager.ts`: Handles fuzzy file/folder searching for the `@` mention autocomplete.
-- `src/DiffManager.ts`: Applies diff operations to the files and manages the review UI (opening/closing diff tabs).
+- `src/DiffManager.ts`: Applies diff operations to the files and projects review state into VS Code (opening/closing diff tabs).
+- `src/ReviewSession.ts`: The SSOT for suggested-diff review state. It owns the current file and accept/reject transitions; VS Code diff tabs are only a presentation layer.
 - `src/matcher.ts`: Contains the fuzzy algorithm to find where a `<<<<<<< SEARCH` block belongs in a file.
 - `src/parser.ts`: Pure functions that parse the raw LLM string into text blocks and structured `DiffOp` objects.
 - `src/openrouter.ts`: LLM API client. Takes messages and yields text/reasoning deltas.

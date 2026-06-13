@@ -214,7 +214,7 @@
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "typecheck": "tsc --noEmit",
-    "test:core": "esbuild test/core.test.ts --bundle --platform=node --outfile=dist/core.test.js && node dist/core.test.js",
+    "test:core": "esbuild test/core.test.ts --bundle --platform=node --alias:vscode=./test/vscodeMock.ts --outfile=dist/core.test.js && node dist/core.test.js",
     "package": "node esbuild.js --production",
     "vscode:prepublish": "node esbuild.js --production"
   },
