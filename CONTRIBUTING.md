@@ -50,3 +50,4 @@ Adhere to these principles to prevent God objects and hidden knowledge:
 - Decompose code into small methods and separate files.
 - Follow the **Single Responsibility Principle** strictly.
 - **Never overcomplicate**. Think about how to write the simplest code possible. Fight complexity.
+- Keep helper functions close to their only consumer. If a helper is used by one class only, make it a private method of that class instead of placing it at module scope.

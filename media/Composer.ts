@@ -136,10 +136,13 @@ export class Composer {
       return;
     }
     this.suggestionsEl.innerHTML = "";
+    // Show compact paths, but keep the real suggestion value for picking.
+    const displayItems = this.truncateSharedPathPrefix(items);
     items.forEach((it, i) => {
       const row = document.createElement("div");
       row.className = "sugg" + (i === 0 ? " active" : "");
-      row.textContent = it;
+      row.textContent = displayItems[i];
+      row.title = displayItems[i];
       row.onclick = () => this.pickSuggestion(i);
       this.suggestionsEl.appendChild(row);
     });
@@ -200,14 +203,15 @@ export class Composer {
    */
   private renderAttachments() {
     this.attachmentsEl.innerHTML = "";
+    // Chips display compact paths while keeping the real attachment paths unchanged.
+    const displayPaths = this.truncateSharedPathPrefix(this.localAttachments.map((a) => a.path));
     this.localAttachments.forEach((a, i) => {
       const chip = document.createElement("span");
       chip.className = "chip";
-      const label = a.type === "selection"
-        ? `${a.path}:${a.range.startLine}-${a.range.endLine}`
-        : a.path;
-      chip.title = label;
-      chip.textContent = label;
+      chip.textContent = a.type === "selection"
+        ? `${displayPaths[i]}:${a.range.startLine}-${a.range.endLine}`
+        : displayPaths[i];
+      chip.title = chip.textContent;
       const x = document.createElement("button");
       x.className = "chipx";
       x.textContent = "×"; // button to remove an attachment from the list
@@ -377,5 +381,25 @@ export class Composer {
       return a.range.startLine === b.range.startLine && a.range.endLine === b.range.endLine;
     }
     return true;
+  }
+
+  private truncateSharedPathPrefix(paths: string[]): string[] {
+    // Only the shared directory prefix is shortened, so unique path parts stay readable.
+    const splitPaths = paths.map((path) => path.split("/"));
+    const prefixLength = this.sharedPrefixLength(splitPaths);
+
+    return splitPaths.map((parts) => parts.map((part, i) => {
+      return i < prefixLength ? part.slice(0, 1) : part;
+    }).join("/"));
+  }
+
+  private sharedPrefixLength(splitPaths: string[][]): number {
+    if (splitPaths.length < 2) return 0;
+    const minLength = Math.min(...splitPaths.map((parts) => Math.max(0, parts.length - 1)));
+    let length = 0;
+    while (length < minLength && splitPaths.every((parts) => parts[length] === splitPaths[0][length])) {
+      length++;
+    }
+    return length;
   }
 }
