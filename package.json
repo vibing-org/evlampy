@@ -55,12 +55,14 @@
       {
         "command": "evlampy.previousFile",
         "title": "Evlampy: Previous Suggested File",
-        "icon": "$(arrow-left)"
+        "icon": "$(arrow-left)",
+        "enablement": "evlampy.reviewCanGoPrevious"
       },
       {
         "command": "evlampy.nextFile",
         "title": "Evlampy: Next Suggested File",
-        "icon": "$(arrow-right)"
+        "icon": "$(arrow-right)",
+        "enablement": "evlampy.reviewCanGoNext"
       },
       {
         "command": "evlampy.acceptFile",
@@ -121,12 +123,12 @@
       "editor/title": [
         {
           "command": "evlampy.previousFile",
-          "when": "evlampy.reviewCanGoPrevious",
+          "when": "evlampy.reviewDiffActive",
           "group": "navigation@1"
         },
         {
           "command": "evlampy.nextFile",
-          "when": "evlampy.reviewCanGoNext",
+          "when": "evlampy.reviewDiffActive",
           "group": "navigation@2"
         },
         {
