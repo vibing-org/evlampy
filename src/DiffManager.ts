@@ -539,7 +539,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     await this.revert(item);
     item.status = "rejected";
     item.detail = "rejected";
-    this.review.decide(rel, "rejected", "rejected");
+    this.review.decide(rel, "rejected", "REJECTED (rolled back to source)");
     this.emitReviewState();
     await this.advanceFrom(item);
   }
