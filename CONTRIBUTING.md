@@ -41,12 +41,14 @@ Adhere to these principles to prevent God objects and hidden knowledge:
 - The Extension Host (Backend) is the absolute owner of the state (**Single Source of Truth**). The Webview (Frontend) is a "dumb" presentation layer. 
 - The Webview does not store its own copy of the chat history, tokens, or cost. 
 - The Host sends the **complete** `GlobalState` to the Webview. The Webview simply renders it.
-- Webview cal only send intents. It never mutates the state directly.
+- Webview can only send intents. It never mutates the state directly.
+- The Webview must not parse backend-rendered text to recover business data. If UI needs actions or metadata, add typed fields to shared contracts in `src/types.ts`.
+- **Never create implicit Backend/Webview dependencies without a typed contract**. A backend text or formatting change must not silently break frontend behavior.
 
 ## Rules for AI Agents
 
 - **Minimize** changes.
-- Write short comments only for important or unobvious logic.
+- Write short comments for important or unobvious logic. Also for all methods and classes. 
 - Decompose code into small methods and separate files.
 - Follow the **Single Responsibility Principle** strictly.
 - **Never overcomplicate**. Think about how to write the simplest code possible. Fight complexity.

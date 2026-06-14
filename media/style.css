@@ -11,6 +11,7 @@
   --accent: var(--vscode-button-background, #007acc);
   --accent-hover: var(--vscode-button-hoverBackground, #005a9e);
   --accent-fg: var(--vscode-button-foreground, #fff);
+  --review-report-accent: #3e916c;
 }
 
 * { box-sizing: border-box; }
@@ -218,6 +219,7 @@ body { display: flex; flex-direction: column; }
 .md > :last-child { margin-bottom: 0; }
 
 .user-attachments { margin-bottom: 12px; }
+.user-review-context { margin-bottom: 12px; }
 
 .msg p, .msg ul, .msg ol, .msg pre, .msg blockquote, .msg hr { margin: 0.5em 0; }
 .msg h1, .msg h2, .msg h3, .msg h4, .msg h5, .msg h6 { margin: 1em 0 0.5em; font-weight: 600; }
@@ -298,6 +300,15 @@ body { display: flex; flex-direction: column; }
 .chip-clear:hover {
   background: var(--error);
   color: var(--vscode-editor-background);
+}
+.chip-review-context {
+  border-color: color-mix(in srgb, var(--review-report-accent) 65%, transparent);
+  color: var(--review-report-accent);
+  cursor: default;
+}
+.chip-review-context:hover {
+  background: var(--chip-bg);
+  border-color: color-mix(in srgb, var(--review-report-accent) 65%, transparent);
 }
 
 #suggestions {
@@ -465,10 +476,12 @@ body { display: flex; flex-direction: column; }
 .suggestion-badge.new { background: var(--vscode-editorSuccess-background, rgba(81, 156, 80, 0.2)); color: var(--vscode-testing-iconPassed, #519c50); }
 .suggestion-badge.rewrite { background: var(--vscode-editorWarning-background, rgba(204, 167, 0, 0.2)); color: var(--vscode-editorWarning-foreground, #cca700); }
 .suggestion-badge.delete { background: var(--vscode-editorError-background, rgba(241, 76, 76, 0.2)); color: var(--vscode-errorForeground, #f14c4c); }
+.suggestion-badge.review { background: color-mix(in srgb, var(--review-report-accent) 18%, transparent); color: var(--review-report-accent); }
 .suggestion[open] > summary, .suggestion-summary { border-bottom-color: var(--border); }
 .suggestion-body { padding: 12px; }
 .suggestion pre { margin: 0; border: none; border-radius: 4px; }
 .suggestion-delete { color: var(--muted); font-style: italic; }
+.review-context-summary { color: var(--muted); white-space: pre-wrap; }
 
 .suggestion.failed { border-color: color-mix(in srgb, var(--error) 65%, transparent); }
 .suggestion.partial { border-color: color-mix(in srgb, var(--warning) 65%, transparent); }
@@ -478,10 +491,12 @@ body { display: flex; flex-direction: column; }
 .notice { padding: 10px 12px; border-left: 3px solid var(--border); background: var(--vscode-editorWidget-background); border-radius: 6px; }
 .notice.status { border-left-color: color-mix(in srgb, var(--vscode-focusBorder, var(--border)) 65%, transparent); }
 .notice.error { border-left-color: color-mix(in srgb, var(--error) 65%, transparent); }
+.notice.review { border-left-color: var(--review-report-accent); }
 .notice.warning { border-left-color: color-mix(in srgb, var(--warning) 65%, transparent); }
+.notice-header { display: flex; align-items: center; gap: 8px; }
 .notice-title { font-weight: 600; font-size: 0.95em; }
+.notice-action { margin-left: auto; flex: 0 0 auto; }
 .notice-text { margin-top: 4px; color: var(--muted); white-space: pre-wrap; font-size: 0.95em; }
-
 .report-item { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 .report-path { font-family: var(--vscode-editor-font-family, monospace); font-size: 0.9em; }
 .report-detail { margin-top: 4px; color: var(--muted); font-size: 0.9em; }

@@ -228,6 +228,11 @@
           "type": "boolean",
           "default": true,
           "description": "Save all chat requests and responses to the extension's global storage folder for debugging."
+        },
+        "evlampy.reviewReportEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically add the review report context chip after reviewing suggested file changes."
         }
       }
     }

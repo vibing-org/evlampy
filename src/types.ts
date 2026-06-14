@@ -17,6 +17,8 @@ export interface EvlampyConfig {
   codexModels: string[];
   /** Service tier: "flex" (~50% discount on some models, e.g. OpenAI), "priority" or not stated (let AI provider use default). */
   serviceTier?: string;
+  /** Whether completed diff reviews should create a follow-up review report context. */
+  reviewReportEnabled: boolean;
 }
 
 /** What is stored in the UI before pressing the Send button. File content is read lazily. */
@@ -28,6 +30,13 @@ export type DraftAttachment =
 export interface DraftMessage {
   text: string;
   attachments: DraftAttachment[];
+  reviewContext?: ReviewContextAction;
+}
+
+/** Compact review receipt that can be attached to one follow-up request without file bodies. */
+export interface ReviewContextAction {
+  summary: string;
+  fileCount: number;
 }
 
 /** Fully resolved file with content. Formed at the moment of Send for history and LLM. */
@@ -108,6 +117,8 @@ export interface UserTurn extends TurnId {
   /** Full text sent to the LLM (including attachment contents) */
   rawText: string;
   attachments: ResolvedAttachment[];
+  /** Review receipt that was sent to the LLM with this turn, if any. */
+  reviewContext?: ReviewContextAction;
 }
 
 export type ContentBlock =
@@ -131,7 +142,8 @@ export interface AssistantTurn extends TurnId {
 export interface SystemTurn extends TurnId {
   role: "system";
   text: string;
-  status: "info" | "error";
+  status: "info" | "error" | "review";
+  reviewContext?: ReviewContextAction;
 }
 
 export type Turn = UserTurn | AssistantTurn | SystemTurn;
@@ -154,7 +166,7 @@ export interface GlobalState {
 
 export type WebviewIntent =
   | { type: "intent:ready" }
-  | { type: "intent:send"; text: string; model: string; effort: EffortLevel; attachments: DraftAttachment[] }
+  | { type: "intent:send"; text: string; model: string; effort: EffortLevel; attachments: DraftAttachment[]; reviewContext?: ReviewContextAction }
   | { type: "intent:cancel" }
   | { type: "intent:editUserTurn"; turnId: string }
   | { type: "intent:retryAssistantTurn"; turnId: string; model: string; effort: EffortLevel }
@@ -173,6 +185,7 @@ export type HostMessage =
   | { type: "state:update"; state: GlobalState }
   | { type: "ui:suggestions"; query: string; items: string[] }
   | { type: "ui:addDraftAttachments"; attachments: DraftAttachment[] }
+  | { type: "ui:setReviewContext"; context: ReviewContextAction }
   | { type: "ui:setDraft"; draft: DraftMessage };
 
 export interface ApplyFailure {

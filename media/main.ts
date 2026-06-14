@@ -29,6 +29,11 @@ window.addEventListener("turn:retry", (event) => {
   });
 });
 
+window.addEventListener("review:addContext", (event) => {
+  const { context } = (event as CustomEvent<{ context: import("./types").ReviewContextAction }>).detail;
+  composer.setReviewContext(context);
+});
+
 window.addEventListener("message", (ev: MessageEvent) => {
   const m = ev.data;
   switch (m.type) {
@@ -43,8 +48,11 @@ window.addEventListener("message", (ev: MessageEvent) => {
     case "ui:addDraftAttachments":
       composer.addDraftAttachments(m.attachments);
       break;
+    case "ui:setReviewContext":
+      composer.setReviewContext(m.context);
+      break;
     case "ui:setDraft":
-      composer.setDraft(m.draft.text, m.draft.attachments);
+      composer.setDraft(m.draft.text, m.draft.attachments, m.draft.reviewContext);
       break;
   }
 });

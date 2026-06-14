@@ -1,4 +1,4 @@
-import { ResolvedAttachment } from "./types";
+import { ResolvedAttachment, ReviewContextAction } from "./types";
 
 /**
  * The ONLY system prompt Evlampy injects on its own. It exists solely to teach
@@ -75,11 +75,25 @@ function renderAttachment(a: ResolvedAttachment): string {
   return `<evlampy:read path="${a.path}"${linesRange}>\n${a.content}\n</evlampy:read>`;
 }
 
-/** Compose the user message: attachments first (as context), then the prompt. */
-export function buildUserMessage(text: string, attachments: ResolvedAttachment[]): string {
-  if (attachments.length === 0) {
+/** Compose the user message: typed context blocks first, then the user's prompt unchanged. */
+export function buildUserMessage(
+  text: string,
+  attachments: ResolvedAttachment[],
+  reviewContext?: ReviewContextAction
+): string {
+  const contextBlocks = [
+    ...(reviewContext ? [renderReviewContext(reviewContext)] : []),
+    ...attachments.map(renderAttachment),
+  ];
+
+  if (contextBlocks.length === 0) {
     return text;
   }
-  const ctx = attachments.map(renderAttachment).join("\n\n");
+  const ctx = contextBlocks.join("\n\n");
   return `${ctx}\n\n---\n\n${text}`;
+}
+
+/** Render the review receipt as cheap context, without file contents or patches. */
+function renderReviewContext(context: ReviewContextAction): string {
+  return `Your previous suggestions review:\n${context.summary}`;
 }

@@ -1,4 +1,4 @@
-import { GlobalState, Turn, UserTurn, AssistantTurn, SystemTurn, ApplyReport, ApplyFailure, UsageInfo } from "./types";
+import { GlobalState, Turn, UserTurn, AssistantTurn, SystemTurn, ApplyReport, ApplyFailure, UsageInfo, ReviewContextAction } from "./types";
 import { marked } from "marked";
 import hljs from "highlight.js";
 
@@ -148,6 +148,10 @@ export class DOMRenderer {
   private renderUserTurn(el: HTMLElement, turn: UserTurn) {
     let html = "";
 
+    if (turn.reviewContext) {
+      html += `<div class="md user-review-context">${this.renderReviewContextBlock(turn.reviewContext)}</div>`;
+    }
+
     if (turn.attachments && turn.attachments.length > 0) {
       const attachmentsHtml = turn.attachments.map(att => {
         const label = att.range ? `${att.path}:${att.range.startLine}-${att.range.endLine}` : att.path;
@@ -162,6 +166,14 @@ export class DOMRenderer {
 
     this.setInnerHtmlIfChanged(el, html);
     this.applyHighlighting(el);
+  }
+
+  private renderReviewContextBlock(context: ReviewContextAction): string {
+    const label = `Review report: ${context.fileCount} file${context.fileCount === 1 ? "" : "s"}`;
+    const badge = `<span class="suggestion-badge review">review</span>`;
+    const summaryHtml = `<span class="suggestion-filepath">${this.escapeHtml(label)}</span>${badge}`;
+    const body = `<pre class="review-context-summary">${this.escapeHtml(context.summary)}</pre>`;
+    return `<details class="suggestion review"><summary>${summaryHtml}</summary><div class="suggestion-body">${body}</div></details>`;
   }
 
   /** Renders the assistant's response, separating reasoning, the main answer, and the diff apply report. */
@@ -302,14 +314,49 @@ export class DOMRenderer {
 
   /** Renders system notifications. */
   private renderSystemTurn(el: HTMLElement, turn: SystemTurn) {
-    const title = turn.status === "error" ? "Error" : "Info";
+    const title = this.systemNoticeTitle(turn);
     const html = `
       <div class="notice ${turn.status}">
-        <div class="notice-title">${this.escapeHtml(title)}</div>
+        <div class="notice-header">
+          <div class="notice-title">${this.escapeHtml(title)}</div>
+          ${this.renderSystemTurnActions(turn)}
+        </div>
         <div class="notice-text">${this.escapeHtml(turn.text)}</div>
       </div>
     `;
     this.setInnerHtmlIfChanged(el, html);
+    this.bindSystemTurnActions(el, turn);
+  }
+
+  /** Maps typed system statuses to user-facing notice titles. */
+  private systemNoticeTitle(turn: SystemTurn): string {
+    if (turn.status === "error") return "Error";
+    if (turn.status === "review") return "Review report";
+    return "Info";
+  }
+
+  /** Renders typed actions for system notices without deriving behavior from notice text. */
+  private renderSystemTurnActions(turn: SystemTurn): string {
+    if (turn.status !== "review" || !turn.reviewContext) {
+      return "";
+    }
+    return `<button class="msg-action notice-action" type="button" title="Add review report to attachments" data-action="add-review-context">${this.plusIcon()}</button>`;
+  }
+
+  /** Binds system notice actions after HTML reconciliation. */
+  private bindSystemTurnActions(el: HTMLElement, turn: SystemTurn): void {
+    const addReviewButton = el.querySelector<HTMLButtonElement>('[data-action="add-review-context"]');
+    if (!addReviewButton || !turn.reviewContext) {
+      return;
+    }
+    addReviewButton.onclick = () => {
+      window.dispatchEvent(new CustomEvent("review:addContext", { detail: { context: turn.reviewContext } }));
+    };
+  }
+
+  /** Plus icon for restoring a review report context chip. */
+  private plusIcon(): string {
+    return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>`;
   }
 
   /** Renders the Thinking block. Preserves the open/closed state across re-renders. */

@@ -158,6 +158,7 @@ export class ChatSession {
     const draft = {
       text: turn.prompt,
       attachments: turn.attachments.map(att => this.toDraftAttachment(att)),
+      reviewContext: turn.reviewContext,
     };
 
     this.state.turns.splice(index);

@@ -43,6 +43,7 @@ export async function loadConfig(): Promise<EvlampyConfig> {
     models: vsConfig.get<string[]>("models"),
     codexModels: vsConfig.get<string[]>("codexModels"),
     serviceTier: vsConfig.get<string>("serviceTier"),
+    reviewReportEnabled: vsConfig.get<boolean>("reviewReportEnabled"),
   };
 
   const file = configFilePath();
@@ -73,6 +74,7 @@ export async function loadConfig(): Promise<EvlampyConfig> {
     models,
     codexModels,
     serviceTier: config.serviceTier,
+    reviewReportEnabled: config.reviewReportEnabled ?? true,
   };
 }
 
@@ -103,6 +105,7 @@ const SAMPLE_CONFIG = `{
   // "apiKey": "\${env:EVLAMPY_API_KEY}",
   // "baseURL": "https://openrouter.ai/api/v1",
   // "serviceTier": "flex",
+  // "reviewReportEnabled": true,
   "userSystemPromptPath": "AGENTS.md"
 }
 `;

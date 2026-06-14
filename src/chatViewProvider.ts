@@ -7,7 +7,7 @@ import { ChatSession } from "./ChatSession";
 import { AttachmentManager } from "./AttachmentManager";
 import { SuggestionManager } from "./SuggestionManager";
 import { WebviewHtmlProvider } from "./WebviewHtmlProvider";
-import { WebviewIntent, HostMessage, DraftAttachment, ChatMsg, EvlampyConfig, EffortLevel } from "./types";
+import { WebviewIntent, HostMessage, DraftAttachment, ChatMsg, EvlampyConfig, EffortLevel, ReviewContextAction, ReviewState } from "./types";
 import { TokenTimer } from "./TokenTimer";
 import { ConfigWatcher } from "./ConfigWatcher";
 import { getProvider } from "./providers";
@@ -31,6 +31,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private userAbort?: AbortController; // stops generation via Stop button
   private timeoutAbort?: AbortController; // stops generation on timeout
   private pushStateTimer?: NodeJS.Timeout; // to avoid pushing newly generated response tokens to the frontend too frequently
+  private lastReviewPhase: ReviewState["phase"] = "idle"; // tracks review phase transitions so the receipt is created once when review finishes
+  private reviewReportEnabled = true;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -39,6 +41,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.session = new ChatSession(context);
 
     this.configWatcher = new ConfigWatcher((config) => {
+      this.reviewReportEnabled = config.reviewReportEnabled;
       const models = activeModels(config);
       this.session.state.availableModels = models;
       if (!models.includes(this.session.state.selectedModel) && models.length > 0) {
@@ -51,6 +54,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     this.context.subscriptions.push(
       this.configWatcher,
+      this.diffs.onReviewChange((event) => this.handleReviewState(event.state)),
       { dispose: () => this.suggestions.dispose() }
     );
   }
@@ -104,7 +108,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.handleReady();
         break;
       case "intent:send":
-        await this.handleSend(intent.text, intent.model, intent.effort, intent.attachments);
+        await this.handleSend(intent.text, intent.model, intent.effort, intent.attachments, intent.reviewContext);
         break;
       case "intent:cancel":
         if (this.userAbort) {
@@ -151,7 +155,42 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.pushSessionState();
   }
 
-  private async handleSend(text: string, model: string, effort: EffortLevel, drafts: DraftAttachment[]): Promise<void> {
+  /** Review updates arrive for each file decision; only the done transition gets a chat receipt. */
+  private handleReviewState(state: ReviewState): void {
+    if (this.lastReviewPhase === "reviewing" && state.phase === "done") {
+      this.addReviewReport(state);
+    }
+    this.lastReviewPhase = state.phase;
+  }
+
+  /** Adds a visible review receipt and typed action data; the composer owns the draft chip state. */
+  private addReviewReport(state: ReviewState): void {
+    if (state.files.length === 0) {
+      return;
+    }
+
+    const summary = this.buildReviewSummary(state);
+    const reviewContext = { summary, fileCount: state.files.length }
+    this.session.addSystemTurn({ role: "system", status: "review", text: summary, reviewContext: reviewContext });
+
+    this.pushSessionState();
+    if (this.reviewReportEnabled) {
+      this.view?.webview.postMessage({ type: "ui:setReviewContext", context: reviewContext } as HostMessage);
+    }
+  }
+
+  /** Builds a compact receipt for follow-up prompts without file contents or patches. */
+  private buildReviewSummary(state: ReviewState): string {
+    return state.files.map((file) => `- ${file.path}: ${file.detail || file.status}`).join("\n");
+  }
+
+  private async handleSend(
+    text: string,
+    model: string,
+    effort: EffortLevel,
+    drafts: DraftAttachment[],
+    reviewContext?: ReviewContextAction
+  ): Promise<void> {
     if (!text.trim() || !model || !effort) {
       return;
     }
@@ -161,9 +200,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       // Read file contents right before sending
       const resolvedAttachments = await this.resolver.resolveDrafts(drafts);
 
-      const userText = buildUserMessage(text, resolvedAttachments);
+      const userText = buildUserMessage(text, resolvedAttachments, reviewContext);
 
-      this.session.addUserTurn({ role: "user", prompt: text, rawText: userText, attachments: resolvedAttachments });
+      this.session.addUserTurn({
+        role: "user",
+        prompt: text,
+        rawText: userText,
+        attachments: resolvedAttachments,
+        ...(reviewContext ? { reviewContext: reviewContext } : {}),
+      });
       this.pushSessionState();
 
       await this.runAssistantRequest(config, model, effort, await this.buildCurrentMessages(config));

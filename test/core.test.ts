@@ -13,6 +13,7 @@ import { DiffManager } from "../src/DiffManager";
 import { ChatSession } from "../src/ChatSession";
 import { resetVscodeMock, setVscodeMockOpenDiffFailure, Uri, vscodeMockState } from "./vscodeMock";
 import { SuggestionManager } from "../src/SuggestionManager";
+import { buildUserMessage } from "../src/prompt";
 
 /** Helper: extract DiffOps from parsed ContentBlocks. */
 function extractOps(blocks: ContentBlock[]): DiffOp[] {
@@ -71,6 +72,21 @@ async function runSuggestionTests() {
   check("suggestions omit non-matching folder", !miss.includes("auto/catalog/moto/"), miss);
 
   suggestions.dispose();
+}
+
+// ---- prompt builder ----
+{
+  const msg = buildUserMessage(
+    "next request",
+    [{ path: "src/foo.ts", content: "export const foo = 1;\n" }],
+    { summary: "- src/foo.ts: accepted", fileCount: 1 }
+  );
+  check(
+    "review context goes before file attachments",
+    msg.indexOf("Your previous suggestions review:") < msg.indexOf("<evlampy:read path=\"src/foo.ts\">"),
+    msg
+  );
+  check("prompt builder keeps user text last", msg.endsWith("---\n\nnext request"), msg);
 }
 
 // ---- parser: edit with one hunk ----
@@ -368,6 +384,7 @@ async function runSuggestionTests() {
     prompt: "second",
     rawText: "second raw",
     attachments: [{ path: "b.ts", range: { startLine: 2, endLine: 4 }, content: "B" }],
+    reviewContext: { summary: "- b.ts: accepted", fileCount: 1 },
   });
   const secondUserId = session.state.turns[2].id;
   const secondAssistant = session.startAssistantTurn();
@@ -378,6 +395,7 @@ async function runSuggestionTests() {
 
   check("edit user turn restores prompt", draft?.text === "second", draft);
   check("edit user turn restores selection attachment", draft?.attachments[0]?.type === "selection" && draft.attachments[0].content === "B", draft);
+  check("edit user turn restores review context", draft?.reviewContext?.summary === "- b.ts: accepted", draft);
   check("edit user turn truncates selected user and below", session.state.turns.length === 2, session.state.turns);
   check("edit user turn recalculates tokens", session.state.totalTokens === 3, session.state.totalTokens);
   check("edit user turn recalculates cost", session.state.totalCost === 0.01, session.state.totalCost);
@@ -444,6 +462,7 @@ async function runSuggestionTests() {
     models: ["m1"],
     codexModels: ["c1"],
     serviceTier: "default",
+    reviewReportEnabled: true,
   };
 
   check("default provider selects OpenAI-compatible", getProvider(baseConfig) === openaiCompatibleProvider);
@@ -572,6 +591,30 @@ async function runDiffManagerTests() {
   await diffs.showNextFile();
   await diffs.acceptCurrentFile();
   check("diff manager accept applies to selected review file", state.files.get("/workspace/b.ts") === "const b = 2;\n" && diffs.currentReviewRel() === "a.ts", { files: state.files, review: diffs.reviewState() });
+
+  resetVscodeMock({ "/workspace/multi.ts": "const a = 1;\nconst b = 1;\n" });
+  const groupedDiffs = new DiffManager(root);
+  const groupedReport = await groupedDiffs.apply([
+    { kind: "edit", path: "multi.ts", hunks: [{ search: "const a = 1;", replace: "const a = 2;" }] },
+    { kind: "edit", path: "multi.ts", hunks: [{ search: "const b = 1;", replace: "const b = 2;" }] },
+  ]);
+  await groupedDiffs.acceptCurrentFile();
+  const groupedState = vscodeMockState();
+  const groupedReview = groupedDiffs.reviewState();
+  check("diff manager groups multiple suggestions for one file into one review item", groupedReview.files.length === 1, groupedReview);
+  check("diff manager grouped suggestions save final file", groupedReport.appliedCount === 2 && groupedState.files.get("/workspace/multi.ts") === "const a = 2;\nconst b = 2;\n", { report: groupedReport, files: groupedState.files });
+  check("diff manager grouped suggestions are accepted without false manual edits", groupedReview.files[0]?.detail === "accepted", groupedReview);
+
+  resetVscodeMock({ "/workspace/manual.ts": "const a = 1;\nconst b = 1;\n" });
+  const manualDiffs = new DiffManager(root);
+  await manualDiffs.apply([
+    { kind: "edit", path: "manual.ts", hunks: [{ search: "const a = 1;", replace: "const a = 2;" }] },
+    { kind: "edit", path: "manual.ts", hunks: [{ search: "const b = 1;", replace: "const b = 2;" }] },
+  ]);
+  const manualDoc = vscodeMockState().docs.get("file:///workspace/manual.ts");
+  manualDoc?.setText("const a = 2;\nconst b = 3;\n");
+  await manualDiffs.acceptCurrentFile();
+  check("diff manager grouped suggestions still detect real manual edits", manualDiffs.reviewState().files[0]?.detail === "accepted after manual edits", manualDiffs.reviewState());
 
   resetVscodeMock({ "/workspace/c.ts": "const c = 1;\n" });
   setVscodeMockOpenDiffFailure(true);

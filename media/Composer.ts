@@ -1,4 +1,4 @@
-import { DraftAttachment, GlobalState, EffortLevel } from "./types";
+import { DraftAttachment, GlobalState, EffortLevel, ReviewContextAction } from "./types";
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 export const vscode = acquireVsCodeApi();
@@ -20,6 +20,7 @@ export class Composer {
   private sendBtn = $<HTMLButtonElement>("send"); // button for sending a request to the LLM
 
   private localAttachments: DraftAttachment[] = []; // list of attached draft files
+  private reviewContext?: ReviewContextAction; // typed review receipt kept as a local composer draft
   private suggestionItems: string[] = []; // list of suggestions matching the current @query
   private suggestionIndex = 0; // selected suggestion, added to the chat on Enter
   private mentionStart = -1; // position right after the active @ in the text field (stored to remove "@query" after picking a suggestion)
@@ -114,6 +115,13 @@ export class Composer {
     this.renderCost(state.totalCost, state.totalTokens);
   }
 
+  /** Stores a compact review receipt that will be sent as typed context with the next request. */
+  public setReviewContext(context?: ReviewContextAction): void {
+    this.reviewContext = context;
+    this.renderAttachments();
+    this.inputEl.focus();
+  }
+
   /** Adds a batch of attachments, filtering out duplicates. */
   public addDraftAttachments(attachments: DraftAttachment[]): void {
     let added = false;
@@ -128,9 +136,10 @@ export class Composer {
   }
 
   /** Replaces the current composer contents with a restored draft. */
-  public setDraft(text: string, attachments: DraftAttachment[]): void {
+  public setDraft(text: string, attachments: DraftAttachment[], reviewContext?: ReviewContextAction): void {
     this.inputEl.value = text;
     this.localAttachments = [...attachments];
+    this.reviewContext = reviewContext;
     this.renderAttachments();
     this.updateInputHeight();
     this.inputEl.focus();
@@ -186,12 +195,14 @@ export class Composer {
       text,
       model: this.modelEl.value,
       effort: this.effortEl.value as EffortLevel,
-      attachments: [...this.localAttachments]
+      attachments: [...this.localAttachments],
+      reviewContext: this.reviewContext
     });
 
     this.inputEl.value = "";
     this.updateInputHeight();
     this.localAttachments = [];
+    this.reviewContext = undefined;
     this.renderAttachments();
     this.onSendCallback();
   }
@@ -217,11 +228,15 @@ export class Composer {
   }
 
   /**
-   * Renders attachment chips.
-   * On removal, mutates the local array and re-renders.
+   * Renders composer context chips and keeps the attachment row hidden when empty.
    */
   private renderAttachments() {
     this.attachmentsEl.innerHTML = "";
+
+    if (this.reviewContext) {
+      this.attachmentsEl.appendChild(this.buildReviewContextChip(this.reviewContext));
+    }
+
     // Chips display compact paths while keeping the real attachment paths unchanged.
     const displayPaths = this.truncateSharedPathPrefix(this.localAttachments.map((a) => a.path));
     this.localAttachments.forEach((a, i) => {
@@ -233,7 +248,7 @@ export class Composer {
     if (this.localAttachments.length > 0) {
       const clearBtn = document.createElement("button");
       clearBtn.className = "chip chip-clear";
-      clearBtn.title = "Clear all attachments";
+      clearBtn.title = "Clear all file attachments";
       clearBtn.textContent = "Clear all";
       clearBtn.onclick = () => {
         this.localAttachments = [];
@@ -243,9 +258,34 @@ export class Composer {
       this.attachmentsEl.appendChild(clearBtn);
     }
 
+    if (this.reviewContext || this.localAttachments.length > 0) {
+      this.attachmentsEl.classList.remove("hidden");
+    } else {
+      this.attachmentsEl.classList.add("hidden");
+    }
+
     if (this.suggestionsVisible()) {
       this.layoutSuggestions();
     }
+  }
+
+  /** Builds a removable review context chip without making the whole chip clickable. */
+  private buildReviewContextChip(context: ReviewContextAction): HTMLElement {
+    const chip = document.createElement("span");
+    chip.className = "chip chip-review-context";
+    chip.textContent = `Review report: ${context.fileCount} file${context.fileCount === 1 ? "" : "s"}`;
+
+    const x = document.createElement("button");
+    x.className = "chipx";
+    x.textContent = "×";
+    x.onclick = (e) => {
+      e.stopPropagation();
+      this.reviewContext = undefined;
+      this.renderAttachments();
+      this.inputEl.focus();
+    };
+    chip.appendChild(x);
+    return chip;
   }
 
   /** Builds a single attachment chip: open-icon + label + remove button. */

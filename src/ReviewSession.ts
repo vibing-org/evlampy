@@ -71,23 +71,29 @@ export class ReviewSession {
   }
 
   /** Mark one file and advance to the next pending file, if any. */
-  decide(rel: string, status: Exclude<ReviewStatus, "pending">): ReviewState {
+  decide(rel: string, status: Exclude<ReviewStatus, "pending">, detail?: string): ReviewState {
     const item = this.state.files.find((f) => f.path === rel && f.status === "pending");
     if (!item) {
       return this.snapshot();
     }
 
     item.status = status;
+    if (detail) {
+      item.detail = detail;
+    }
     this.state.currentRel = this.nextPendingRel();
     this.state.phase = this.state.currentRel ? "reviewing" : "done";
     return this.snapshot();
   }
 
   /** Mark all remaining files and finish the review. */
-  decideAll(status: Exclude<ReviewStatus, "pending">): ReviewState {
+  decideAll(status: Exclude<ReviewStatus, "pending">, detail?: string): ReviewState {
     for (const item of this.state.files) {
       if (item.status === "pending") {
         item.status = status;
+        if (detail) {
+          item.detail = detail;
+        }
       }
     }
     this.state.phase = "done";

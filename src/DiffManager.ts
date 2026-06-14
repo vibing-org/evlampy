@@ -22,12 +22,25 @@ interface ReviewItem {
   uri: vscode.Uri;
   /** Original on-disk content; null if the file was newly created. */
   original: string | null;
+  /** Proposed content after applying the suggestion; null for deleted files. */
+  proposed: string | null;
   /** True if the op deleted the file (already removed from disk). */
   deleted: boolean;
   /** Virtual URI holding the original content for the left side of the diff. */
   origUri: vscode.Uri;
   status: ReviewStatus;
   detail: string;
+}
+
+interface ReviewChange {
+  rel: string;
+  uri: vscode.Uri;
+  /** Content before the first successful suggestion for this file. */
+  original: string | null;
+  /** Final content after all successful suggestions for this file. */
+  proposed: string | null;
+  deleted: boolean;
+  details: string[];
 }
 
 /**
@@ -64,6 +77,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
 
   // ---- Apply a batch, then start the review ----
 
+  /** Applies the full suggestion batch, then builds one review item per changed file. */
   async apply(ops: DiffOp[]): Promise<ApplyReport> {
     this.items = [];
     this.originals.clear();
@@ -71,10 +85,11 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     this.emitReviewState();
 
     const report: ApplyResultItem[] = [];
+    const changes = new Map<string, ReviewChange>();
     for (let opIndex = 0; opIndex < ops.length; opIndex++) {
       const op = ops[opIndex];
       try {
-        report.push(await this.applyOne(op, opIndex));
+        report.push(await this.applyOne(op, opIndex, changes));
       } catch (e) {
         report.push({
           path: op.path,
@@ -87,6 +102,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     }
 
     const appliedCount = report.filter((i) => i.ok).length;
+    this.items = this.buildReviewItems(changes);
 
     if (this.items.length > 0) {
       this.review.start(this.reviewFiles());
@@ -109,16 +125,21 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     }));
   }
 
-  private async applyOne(op: DiffOp, opIndex: number): Promise<ApplyResultItem> {
+  /** Routes a single parsed diff op to the matching applier. */
+  private async applyOne(
+    op: DiffOp,
+    opIndex: number,
+    changes: Map<string, ReviewChange>
+  ): Promise<ApplyResultItem> {
     switch (op.kind) {
       case "new":
-        return this.applyNew(op.path, op.content, opIndex);
+        return this.applyNew(op.path, op.content, opIndex, changes);
       case "rewrite":
-        return this.applyRewrite(op.path, op.content, opIndex);
+        return this.applyRewrite(op.path, op.content, opIndex, changes);
       case "edit":
-        return this.applyEdit(op.path, op.hunks, opIndex);
+        return this.applyEdit(op.path, op.hunks, opIndex, changes);
       case "delete":
-        return this.applyDelete(op.path, opIndex);
+        return this.applyDelete(op.path, opIndex, changes);
     }
   }
 
@@ -131,27 +152,31 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     }
   }
 
+  /** Creates a new file and records it as a per-file review change. */
   private async applyNew(
     rel: string,
     content: string,
-    opIndex: number
+    opIndex: number,
+    changes: Map<string, ReviewChange>
   ): Promise<ApplyResultItem> {
     const uri = this.resolve(rel);
     if (await this.exists(uri)) {
-      return this.applyRewrite(rel, content, opIndex);
+      return this.applyRewrite(rel, content, opIndex, changes);
     }
     const we = new vscode.WorkspaceEdit();
     we.createFile(uri, { ignoreIfExists: true });
     we.insert(uri, new vscode.Position(0, 0), content);
     await vscode.workspace.applyEdit(we);
-    this.track(rel, uri, null, false, "new file");
+    this.recordChange(changes, rel, uri, null, content, false, "new file");
     return { path: rel, ok: true, detail: "new file", kind: "new", opIndex };
   }
 
+  /** Replaces an existing file and records the final proposed content for review. */
   private async applyRewrite(
     rel: string,
     content: string,
-    opIndex: number
+    opIndex: number,
+    changes: Map<string, ReviewChange>
   ): Promise<ApplyResultItem> {
     const uri = this.resolve(rel);
     const doc = await vscode.workspace.openTextDocument(uri);
@@ -166,14 +191,16 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
       };
     }
     await this.replaceWhole(doc, content);
-    this.track(rel, uri, original, false, "rewritten");
+    this.recordChange(changes, rel, uri, original, content, false, "rewritten");
     return { path: rel, ok: true, detail: "rewritten", kind: "rewrite", opIndex };
   }
 
+  /** Applies search/replace hunks to the current document text and records the resulting proposal. */
   private async applyEdit(
     rel: string,
     hunks: Hunk[],
-    opIndex: number
+    opIndex: number,
+    changes: Map<string, ReviewChange>
   ): Promise<ApplyResultItem> {
     const uri = this.resolve(rel);
     const doc = await vscode.workspace.openTextDocument(uri);
@@ -241,7 +268,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
       if (warnedAboutMultiples) {
         detail += " (⚠️ applied to 1st of multiple occurrences)";
       }
-      this.track(rel, uri, original, false, detail);
+      this.recordChange(changes, rel, uri, original, newText, false, detail);
     }
 
     if (failures.length > 0) {
@@ -273,7 +300,12 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     };
   }
 
-  private async applyDelete(rel: string, opIndex: number): Promise<ApplyResultItem> {
+  /** Deletes an existing file and records the deletion for review/reject restore. */
+  private async applyDelete(
+    rel: string,
+    opIndex: number,
+    changes: Map<string, ReviewChange>
+  ): Promise<ApplyResultItem> {
     const uri = this.resolve(rel);
     if (!(await this.exists(uri))) {
       return {
@@ -289,7 +321,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     const we = new vscode.WorkspaceEdit();
     we.deleteFile(uri, { ignoreIfNotExists: true });
     await vscode.workspace.applyEdit(we);
-    this.track(rel, uri, original, true, "deleted");
+    this.recordChange(changes, rel, uri, original, null, true, "deleted");
     return {
       path: rel,
       ok: true,
@@ -299,27 +331,61 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     };
   }
 
-  private track(
+  private recordChange(
+    changes: Map<string, ReviewChange>,
     rel: string,
     uri: vscode.Uri,
     original: string | null,
+    proposed: string | null,
     deleted: boolean,
     detail: string
   ): void {
-    if (this.items.some((i) => i.uri.fsPath === uri.fsPath)) {
+    const existing = changes.get(uri.fsPath);
+    if (existing) {
+      existing.proposed = proposed;
+      existing.deleted = deleted;
+      existing.details.push(detail);
       return;
     }
-    const origUri = vscode.Uri.parse(`${ORIG_SCHEME}:${rel}?v=${this.counter++}`);
-    this.originals.set(origUri.toString(), original ?? "");
-    this.items.push({
+
+    changes.set(uri.fsPath, {
       rel,
       uri,
       original,
+      proposed,
       deleted,
-      origUri,
-      status: "pending",
-      detail,
+      details: [detail],
     });
+  }
+
+  /** Converts per-file accumulated changes into review items after the whole batch is applied. */
+  private buildReviewItems(changes: Map<string, ReviewChange>): ReviewItem[] {
+    const items: ReviewItem[] = [];
+    for (const change of changes.values()) {
+      // Skip changes that cancel themselves out before review starts.
+      if (!change.deleted && change.original === change.proposed) {
+        continue;
+      }
+      // A file created and then deleted in the same batch leaves nothing to review.
+      if (change.deleted && change.original === null) {
+        continue;
+      }
+
+      // Each review item needs a stable virtual "original" document for the left side of the VS Code diff.
+      const origUri = vscode.Uri.parse(`${ORIG_SCHEME}:${change.rel}?v=${this.counter++}`);
+      this.originals.set(origUri.toString(), change.original ?? "");
+      items.push({
+        rel: change.rel,
+        uri: change.uri,
+        original: change.original,
+        proposed: change.proposed,
+        deleted: change.deleted,
+        origUri,
+        status: "pending",
+        detail: change.details.join("; "),
+      });
+    }
+    return items;
   }
 
   private async replaceWhole(doc: vscode.TextDocument, content: string): Promise<void> {
@@ -451,6 +517,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     if (!item) {
       return;
     }
+    const detail = await this.acceptDetail(item);
     if (!item.deleted) {
       const doc = await vscode.workspace.openTextDocument(item.uri);
       if (doc.isDirty) {
@@ -458,7 +525,8 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
       }
     }
     item.status = "accepted";
-    this.review.decide(rel, "accepted");
+    item.detail = detail;
+    this.review.decide(rel, "accepted", detail);
     this.emitReviewState();
     await this.advanceFrom(item);
   }
@@ -470,7 +538,8 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     }
     await this.revert(item);
     item.status = "rejected";
-    this.review.decide(rel, "rejected");
+    item.detail = "rejected";
+    this.review.decide(rel, "rejected", "rejected");
     this.emitReviewState();
     await this.advanceFrom(item);
   }
@@ -488,6 +557,7 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
   /** Accept all still-pending files at once. */
   async acceptAll(): Promise<void> {
     for (const item of this.items.filter((i) => i.status === "pending")) {
+      const detail = await this.acceptDetail(item);
       if (!item.deleted) {
         const doc = await vscode.workspace.openTextDocument(item.uri);
         if (doc.isDirty) {
@@ -495,9 +565,10 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
         }
       }
       item.status = "accepted";
+      item.detail = detail;
+      this.review.decide(item.rel, "accepted", detail);
       await this.closeDiffTab(item);
     }
-    this.review.decideAll("accepted");
     this.emitReviewState();
   }
 
@@ -506,15 +577,28 @@ export class DiffManager implements vscode.TextDocumentContentProvider {
     for (const item of this.items.filter((i) => i.status === "pending")) {
       await this.revert(item);
       item.status = "rejected";
+      item.detail = "rejected";
       await this.closeDiffTab(item);
     }
-    this.review.decideAll("rejected");
+    this.review.decideAll("rejected", "rejected");
     this.emitReviewState();
   }
 
   /** Push the full review state after every transition. */
   private emitReviewState(): void {
     this._onReviewChange.fire({ kind: "state", state: this.review.snapshot() });
+  }
+
+  private async acceptDetail(item: ReviewItem): Promise<string> {
+    if (item.deleted) {
+      return "accepted deletion";
+    }
+    if (item.proposed === null) {
+      return "accepted";
+    }
+
+    const doc = await vscode.workspace.openTextDocument(item.uri);
+    return doc.getText() === item.proposed ? "accepted" : "accepted after manual edits";
   }
 
   private async revert(item: ReviewItem): Promise<void> {
