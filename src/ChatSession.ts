@@ -46,7 +46,7 @@ export class ChatSession {
   public loadFromHistory(session: GlobalState): void {
     this.state.sessionId = session.sessionId;
     this.state.chatTitle = session.chatTitle;
-    this.state.turns = session.turns.map(t => ({ ...t }));
+    this.state.turns = session.turns.map(t => ({ ...t, id: t.id || crypto.randomUUID() }));
     this.state.totalCost = session.totalCost;
     this.state.totalTokens = session.totalTokens;
     this.state.selectedModel = session.selectedModel;

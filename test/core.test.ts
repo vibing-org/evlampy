@@ -2,7 +2,7 @@
 // Run: npm run test:core
 import { parseChatResponse } from "../src/parser";
 import { findMatch } from "../src/matcher";
-import { ContentBlock, DiffOp, EvlampyConfig } from "../src/types";
+import { ContentBlock, DiffOp, EvlampyConfig, GlobalState, Turn } from "../src/types";
 import { activeModels, DEFAULT_CODEX_MODELS, normalizeProvider } from "../src/configDefaults";
 import { buildCodexPrompt, CodexJsonlParser, toCodexReasoningEffort, toCodexUsage, validateCodexConfig } from "../src/providers/codexCli";
 import { getProvider } from "../src/providers";
@@ -14,6 +14,7 @@ import { ChatSession } from "../src/ChatSession";
 import { resetVscodeMock, setVscodeMockOpenDiffFailure, Uri, vscodeMockState } from "./vscodeMock";
 import { SuggestionManager } from "../src/SuggestionManager";
 import { buildUserMessage } from "../src/prompt";
+import { StablePrefixRenderGate } from "../media/StablePrefixRenderGate";
 
 /** Helper: extract DiffOps from parsed ContentBlocks. */
 function extractOps(blocks: ContentBlock[]): DiffOp[] {
@@ -41,6 +42,59 @@ function createTestExtensionContext(): any {
       update: async (key: string, value: unknown) => { workspaceState.set(key, value); },
     },
   };
+}
+
+function makeUserTurn(id: string): Turn {
+  return { id, role: "user", prompt: id, rawText: id, attachments: [] };
+}
+
+function makeAssistantTurn(id: string): Turn {
+  return { id, role: "assistant", rawText: id, reasoning: "", status: "done" };
+}
+
+function makeSystemTurn(id: string): Turn {
+  return { id, role: "system", text: id, status: "info" };
+}
+
+function renderedExistingIndexes(gate: StablePrefixRenderGate, sessionId: string, turns: Turn[]): number[] {
+  const pass = gate.begin({ sessionId, turns });
+  return turns
+    .map((_, index) => index)
+    .filter((index) => gate.shouldRenderExisting(pass, index));
+}
+
+// ---- webview render gate: old turns are a stable rendered prefix ----
+{
+  const gate = new StablePrefixRenderGate();
+  const turns = [
+    makeUserTurn("u1"),
+    makeAssistantTurn("a1"),
+    makeSystemTurn("s1"),
+    makeUserTurn("u2"),
+    makeAssistantTurn("a2"),
+    makeSystemTurn("s2"),
+  ];
+
+  check(
+    "render gate renders all existing nodes on first session pass",
+    renderedExistingIndexes(gate, "session-1", turns).join(",") === "0,1,2,3,4,5"
+  );
+  check(
+    "render gate skips stable prefix before last user/assistant turn",
+    renderedExistingIndexes(gate, "session-1", turns).join(",") === "4,5"
+  );
+  check(
+    "render gate renders the last assistant plus following system turns",
+    renderedExistingIndexes(gate, "session-1", [makeUserTurn("u1"), makeAssistantTurn("a1"), makeSystemTurn("s1")]).join(",") === "1,2"
+  );
+  check(
+    "render gate renders all system-only states",
+    renderedExistingIndexes(gate, "session-1", [makeSystemTurn("s1"), makeSystemTurn("s2")]).join(",") === "0,1"
+  );
+  check(
+    "render gate invalidates the stable prefix after session change",
+    renderedExistingIndexes(gate, "session-2", turns).join(",") === "0,1,2,3,4,5"
+  );
 }
 
 // ---- suggestions: files and folders use the same ordered fuzzy path matching ----
@@ -368,6 +422,28 @@ async function runSuggestionTests() {
   const done = review.decideAll("accepted");
   check("accept all finishes review", done.phase === "done" && !done.currentRel && !review.isActive(), done);
   check("accept all marks every pending file", done.files.every((f) => f.status === "accepted"), done);
+}
+
+// ---- chat session: edit user turn restores draft and truncates branch ----
+{
+  const session = new ChatSession(createTestExtensionContext());
+  session.loadFromHistory({
+    sessionId: "restored",
+    turns: [
+      { role: "user", prompt: "old", rawText: "old", attachments: [] },
+      { id: "kept-id", role: "assistant", rawText: "answer", reasoning: "", status: "done" },
+    ],
+    totalCost: 0,
+    totalTokens: 0,
+    availableModels: [],
+    selectedModel: "",
+    selectedEffort: "medium",
+    isStreaming: false,
+    updatedAt: 1,
+  } as unknown as GlobalState);
+
+  check("history restore generates missing turn ids", typeof session.state.turns[0].id === "string" && session.state.turns[0].id.length > 0, session.state.turns);
+  check("history restore preserves existing turn ids", session.state.turns[1].id === "kept-id", session.state.turns);
 }
 
 // ---- chat session: edit user turn restores draft and truncates branch ----

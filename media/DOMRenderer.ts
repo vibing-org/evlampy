@@ -1,6 +1,7 @@
 import { GlobalState, Turn, UserTurn, AssistantTurn, SystemTurn, ApplyReport, ApplyFailure, UsageInfo, ReviewContextAction } from "./types";
 import { marked } from "marked";
 import hljs from "highlight.js";
+import { StablePrefixRenderGate } from "./StablePrefixRenderGate";
 
 export class DOMRenderer {
 
@@ -8,6 +9,7 @@ export class DOMRenderer {
   private welcomeEl = document.getElementById("welcome")!;
   // Tracks the last rendered text length per host, so streaming updates can be O(delta) instead of O(n).
   private streamLengths = new WeakMap<HTMLElement, number>();
+  private renderGate = new StablePrefixRenderGate();
 
   constructor() {
     marked.setOptions({ gfm: true, breaks: true });
@@ -30,13 +32,22 @@ export class DOMRenderer {
       if (id) existingNodes.set(id, child as HTMLElement);
     });
 
-    for (const turn of state.turns) {
+    // Old turns are immutable in practice
+    // Оnly the tail from the latest user/assistant turn can still change
+    const renderPass = this.renderGate.begin(state);
+    for (let turnIndex = 0; turnIndex < state.turns.length; turnIndex++) {
+      const turn = state.turns[turnIndex];
       let el = existingNodes.get(turn.id);
       if (!el) {
         el = this.createTurnNode(turn);
         this.messagesEl.appendChild(el);
       } else {
-        this.updateTurnNode(el, turn);
+        if (this.renderGate.shouldRenderExisting(renderPass, turnIndex)) {
+          this.updateTurnNode(el, turn);
+        } else {
+          existingNodes.delete(turn.id);
+          continue;
+        }
         existingNodes.delete(turn.id);
       }
     }

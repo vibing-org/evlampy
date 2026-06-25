@@ -106,7 +106,7 @@ export interface ReviewState {
 // ---- Global State Model (Single Source of Truth) ----
 
 export interface TurnId {
-  /** Unique ID for granular DOM patching without re-rendering the entire list */
+  /** Stable UUID identity for DOM reconciliation. Generated once when the turn is created and persisted in history. */
   id: string;
 }
 

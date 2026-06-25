@@ -30,6 +30,7 @@ Webview (Frontend):
 
 - `media/main.ts`: Frontend thin entry point.
 - `media/DOMRenderer.ts`: Pure state-to-DOM renderer. Takes `GlobalState` and updates the DOM using key-based reconciliation to avoid disrupting text selection during streaming. No state mutation happens here.
+- `media/StablePrefixRenderGate.ts`: Keeps old chat rendering cheap. Existing DOM nodes before the last user/assistant turn are treated as a stable rendered prefix and must not be re-rendered on every `state:update`.
 - `media/Composer.ts`: Manages the local UI state of the input area (textarea, model selectors, attachment chips, `@` suggestions). Emits `Intents` to the backend.
 - `media/AutoScroller.ts`: Encapsulates the logic for keeping the chat scrolled to the bottom unless the user manually scrolls up.
 - `media/style.css`: All styling, defines signle and unified design-code for the plugin.
@@ -44,6 +45,7 @@ Adhere to these principles to prevent God objects and hidden knowledge:
 - Webview can only send intents. It never mutates the state directly.
 - The Webview must not parse backend-rendered text to recover business data. If UI needs actions or metadata, add typed fields to shared contracts in `src/types.ts`.
 - **Never create implicit Backend/Webview dependencies without a typed contract**. A backend text or formatting change must not silently break frontend behavior.
+- Each `Turn.id` is a stable UUID identity for the rendered chat turn. It is generated when a turn is created and is persisted in history. The Webview uses this identity for DOM reconciliation; do not regenerate it for existing turns.
 
 ## Rules for AI Agents
 
